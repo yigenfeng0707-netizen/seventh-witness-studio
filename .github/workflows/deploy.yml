@@ -1,0 +1,48 @@
+name: Deploy to ModelScope Studio
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve owner
+        id: owner
+        run: |
+          O="${{ secrets.MODELSCOPE_OWNER }}"
+          if [ -z "$O" ]; then
+            O=$(curl -sS -H "Authorization: Bearer ${{ secrets.MODELSCOPE_TOKEN }}" \
+              https://modelscope.cn/openapi/v1/users/me \
+              | python -c "import sys,json;print(json.load(sys.stdin)['data']['username'])")
+          fi
+          echo "owner=$O" >> $GITHUB_OUTPUT
+
+      - name: Clone studio repo
+        run: |
+          git clone "https://oauth2:${{ secrets.MODELSCOPE_TOKEN }}@www.modelscope.cn/studios/${{ steps.owner.outputs.owner }}/seventh-witness.git" studio
+
+      - name: Assemble
+        run: |
+          cd studio
+          for f in app.py game_data.py llm_client.py npc_engine.py requirements.txt Dockerfile README.md; do
+            cp "$GITHUB_WORKSPACE/$f" .
+          done
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git add -A -f
+          git diff --cached --quiet || git commit -m "deploy from GitHub ${{ github.sha }}"
+
+      - name: Push
+        run: cd studio && git push origin master
+
+      - name: Trigger deploy
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.MODELSCOPE_TOKEN }}" \
+            -H "Content-Type: application/json" -d '{}' \
+            "https://modelscope.cn/openapi/v1/studios/${{ steps.owner.outputs.owner }}/seventh-witness/deploy"
