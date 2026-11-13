@@ -27,14 +27,18 @@ python app.py
 # → http://127.0.0.1:7860
 ```
 
-## LLM 双通道
+## LLM 链式多供应商 + 离线兜底
 
-| 模式 | 触发条件 | 说明 |
+按环境变量逐级组装调用链：**主供应商 → 备供应商 → (魔搭) → MockLLM**，任何一环失败当次自动切到下一环，**逐调用回退**，游戏流程永不中断。
+
+| 环节 | 触发条件 | 说明 |
 |---|---|---|
-| MockLLM（默认） | 无环境变量 | 离线规则引擎，全流程可通关，评审现场永不断线 |
-| 在线优先混合 | 设置 `MODELSCOPE_API_TOKEN` | 魔搭 API-Inference（Qwen3.8-Flash-Next）实时生成台词；**单次调用失败/限流自动回退离线**，游戏流程永不中断 |
+| 主供应商 | `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | 任意 OpenAI 兼容接口（线上实测：`qwen3.8-27b`） |
+| 备供应商 | `LLM_API2_BASE` / `LLM_API2_KEY` / `LLM_API2_MODEL` | 第二家 OpenAI 兼容接口（线上实测：`sensenova-6.8-flash`） |
+| 魔搭（legacy） | `MODELSCOPE_API_TOKEN` | API-Inference，默认 `Qwen/Qwen3.8-Flash-Next`，可用 `MSC_MODEL` / `MODELSCOPE_API_BASE` 调整 |
+| MockLLM（默认） | 无任何环境变量 | 离线规则引擎，覆盖全部话题与 4 条坦白线，**纯离线也能完整通关** |
 
-可选环境变量：`MSC_MODEL`（默认 `Qwen/Qwen3.8-Flash-Next`）、`MODELSCOPE_API_BASE`。
+可选：`LLM_NO_THINKING=1`（对 Qwen3 系关闭思考模式）。密钥只走环境变量，不进代码库。
 
 ## 通关提示（剧透慎读）
 
