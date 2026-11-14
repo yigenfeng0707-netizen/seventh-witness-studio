@@ -39,10 +39,36 @@ def greeting(state, npc_id):
 
 # ---------------- 提问 ----------------
 
+# 关键案情关键词：低信任时拒绝细谈（规则层校验，确定性输出）
+KEY_TOPICS = ("案发", "当晚", "那晚", "凶器", "钥匙", "钟楼", "钟声", "沈师傅", "沈墨白",
+              "沈", "指纹", "账本", "怀表", "手套", "蜡烛", "第三把", "钩爪", "机芯", "侧门")
+
+
 def ask(state, npc_id, question, llm):
     if state["ended"]:
         return {"reply": "（本案已结。点击“重新开始”再开一局。）", "clue": None, "timeup": False}
     st = state["npc"][npc_id]
+    npc = G.NPCS[npc_id]
+    q = (question or "").strip()
+
+    # 规则层校验①：信任 <15 且未供述 → 下逐客令（额外流失 2 分钟）
+    if st["trust"] < 15 and not st["confessed"]:
+        state["time"] = max(0, state["time"] - G.COST_TALK - 2)
+        st["emotion"] = "逐客"
+        reply = (f"（{npc['name']} 把手里的活一撂，转身下了逐客令："
+                 f"“话不投机半句多。你走吧，今天什么都别问。”"
+                 f"——信任过低被拒之门外，时间额外流逝 2 分钟）")
+        return {"reply": reply, "clue": None, "timeup": _tick(state)}
+
+    # 规则层校验②：信任 <25 且问及关键案情 → 拒绝细谈（确定性规则输出）
+    if st["trust"] < 25 and not st["confessed"] and any(k in q for k in KEY_TOPICS):
+        state["time"] = max(0, state["time"] - G.COST_TALK)
+        st["emotion"] = "戒备"
+        reply = (f"（{npc['name']} 面色一沉，把话头掐断："
+                 f"“这话我不敢接。你先做点让人信得过的事，再来问这些。”"
+                 f"——信任不足，关键问题被拒绝）")
+        return {"reply": reply, "clue": None, "timeup": _tick(state)}
+
     reply = llm.ask(G.NPCS[npc_id], question, st["trust"],
                     st["memories"], st["history"])
 
@@ -66,7 +92,33 @@ def ask(state, npc_id, question, llm):
     clue = reply.get("clue")
     if clue:
         clue = _add_clue(state, clue)
+
+    # 规则层增益③：信任 ≥85 且未供述 → 主动多透露半句真话（确定性提示）
+    if st["trust"] >= 85 and not st["confessed"]:
+        whisper = npc.get("whisper")
+        if whisper:
+            reply["dialogue"] = (str(reply.get("dialogue", "")) +
+                                 f"\n（他犹豫了一下，压低声音补了一句：“{whisper}”）")
+
     return {"reply": reply["dialogue"], "clue": clue, "timeup": _tick(state)}
+
+
+# ---------------- 存档（分享码） ----------------
+
+def to_json(state):
+    import json as _json, base64 as _b64
+    return _b64.b64encode(_json.dumps(state, ensure_ascii=False).encode("utf-8")).decode("ascii")
+
+
+def from_json(code):
+    import json as _json, base64 as _b64
+    try:
+        st = _json.loads(_b64.b64decode(code.strip()).decode("utf-8"))
+    except Exception:
+        raise ValueError("存档码无效")
+    if not isinstance(st, dict) or "npc" not in st or "time" not in st or "clues" not in st:
+        raise ValueError("存档码无效")
+    return st
 
 
 # ---------------- 出示证据 ----------------

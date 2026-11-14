@@ -568,6 +568,28 @@ def do_accuse(choice, chat_hist, state):
             engine.end_markdown(state), gr.skip(), gr.skip())
 
 
+def do_export(state):
+    try:
+        return engine.to_json(state)
+    except Exception:
+        return "（导出失败）"
+
+
+def do_load(code):
+    try:
+        st = engine.from_json(code or "")
+    except ValueError as e:
+        raise gr.Error(str(e))
+    cur = st.get("cur", DEFAULT_NPC)
+    greet = engine.switch(st, cur)
+    ended = bool(st.get("ended", False))
+    return (_msgs(greet), engine.clock_md(st), engine.status_card(st, cur),
+            engine.clue_board(st), gr.Group(visible=ended),
+            engine.end_markdown(st) if ended else gr.skip(),
+            "", NPC_LABELS.get(cur, NPC_LABELS[DEFAULT_NPC]),
+            st, "")
+
+
 with gr.Blocks(title=CASE_TITLE, css=CSS, js=SOUND_JS) as demo:
     gr.Markdown(
         f"# 🕰️ 第七位证人\n"
@@ -601,6 +623,12 @@ with gr.Blocks(title=CASE_TITLE, css=CSS, js=SOUND_JS) as demo:
                                     label="指认真凶（一锤定音，慎重！）",
                                     elem_classes=["accuse-dd"])
             accuse_btn = gr.Button("🚨 结案指认", variant="stop", elem_classes=["accuse-btn"])
+            with gr.Accordion("💾 存档 / 续玩", open=False):
+                save_box = gr.Textbox(label="存档码（导出后复制保存；续玩时粘贴→读取并继续）",
+                                      lines=3, max_lines=5)
+                with gr.Row():
+                    save_btn = gr.Button("📤 生成存档码", size="sm", elem_classes=["quick-btn"])
+                    load_btn = gr.Button("📥 读取并继续", size="sm", elem_classes=["quick-btn"])
 
     verdict_grp = gr.Group(visible=False, elem_classes=["verdict-card"])
     with verdict_grp:
@@ -615,6 +643,8 @@ with gr.Blocks(title=CASE_TITLE, css=CSS, js=SOUND_JS) as demo:
     ev_btn.click(do_present, [ev_dd, chat, state], OUT8)
     accuse_btn.click(do_accuse, [accuse_dd, chat, state], OUT8)
     restart_btn.click(do_restart, None, OUT8)
+    save_btn.click(do_export, [state], [save_box])
+    load_btn.click(do_load, [save_box], OUT8 + [state, save_box])
     for b, qq in zip(quick_btns, QUICK_QS):
         # 快捷提问：点击即直接发送该问题（不再只填充输入框）
         b.click(lambda chat_hist, st, t=qq: do_ask(t, chat_hist, st), [chat, state], OUT8)
