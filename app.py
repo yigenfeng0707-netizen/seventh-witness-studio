@@ -268,6 +268,16 @@ body, gradio-app, .gradio-container {
   background: #0a0f1c !important;
   border-radius: 10px !important;
 }
+/* 下拉框本体：Gradio 内层 .wrap 是白底，会把浅色文字吞掉 */
+.evidence-select .wrap, .accuse-dd .wrap {
+  background: #0a0f1c !important;
+  border-color: var(--line-brass) !important;
+}
+.evidence-select input, .accuse-dd input {
+  color: var(--ink) !important;
+  background: transparent !important;
+  -webkit-text-fill-color: var(--ink) !important;
+}
 
 /* 按钮：铜金主调 */
 .gradio-container button {
@@ -313,6 +323,33 @@ body, gradio-app, .gradio-container {
 }
 .accuse-btn:hover { transform: translateY(-1px); }
 .accuse-dd { border: 1px solid rgba(212, 60, 60, 0.35) !important; }
+
+/* 下拉弹出层：Gradio 默认白底，而全局 li 是浅色文字 → 必须显式压成深色 */
+.gradio-container [id$="-options"],
+.gradio-container ul.option-list {
+  background: var(--panel-2) !important;
+  color: var(--ink) !important;
+  border: 1px solid var(--line-brass) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6) !important;
+  padding: 4px !important;
+  overflow: hidden !important;
+}
+.gradio-container ul.option-list li,
+.gradio-container ul.option-list .item,
+.gradio-container [id$="-options"] li {
+  color: var(--ink) !important;
+  background: transparent !important;
+  padding: 8px 10px !important;
+  border-radius: 7px !important;
+  font-size: 14px !important;
+}
+.gradio-container ul.option-list li.active,
+.gradio-container ul.option-list li:hover,
+.gradio-container [id$="-options"] li:hover {
+  background: rgba(212, 169, 78, 0.16) !important;
+  color: var(--brass-hi) !important;
+}
 
 /* HUD：时间 */
 .hud-clock {
