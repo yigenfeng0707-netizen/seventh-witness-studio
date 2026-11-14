@@ -21,9 +21,11 @@ import game_data as G
 def _match_topic(question, rules=None):
     rules = rules if rules is not None else G.TOPIC_RULES
     q = question.strip()
-    for topic, kws, _tone in rules:
+    for rule in rules:
+        topic, kws = rule[0], rule[1]
+        tone = rule[2] if len(rule) > 2 else 2
         if any(kw in q for kw in kws):
-            return topic, _tone
+            return topic, tone
     return "default", 2
 
 
@@ -103,7 +105,8 @@ class OpenAICompatLLM(_OpenAIBase):
         if no_thinking:
             self._kw["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
 
-    def ask(self, npc, question, trust, memories=None, history=None, rules=None, consensus=None):
+    def ask(self, npc, question, trust, memories=None, history=None, rules=None,
+            consensus=None, fame=False):
         msgs = [{"role": "system", "content": self._system(npc, trust, memories or [], consensus)}]
         for h in (history or [])[-6:]:
             msgs.append({"role": h["role"], "content": h["content"]})
@@ -135,7 +138,8 @@ class ModelScopeLLM(_OpenAIBase):
                                              "Qwen/Qwen3.8-Flash-Next")
         self.name = f"ModelScopeAPI（{self.model}）"
 
-    def ask(self, npc, question, trust, memories=None, history=None, rules=None, consensus=None):
+    def ask(self, npc, question, trust, memories=None, history=None, rules=None,
+            consensus=None, fame=False):
         msgs = [{"role": "system", "content": self._system(npc, trust, memories or [], consensus)}]
         for h in (history or [])[-6:]:
             msgs.append({"role": h["role"], "content": h["content"]})
@@ -171,11 +175,13 @@ class HybridLLM:
         self.fallback = MockLLM()
         self.name = " → ".join(c.name for c in chain) + " → 离线兜底"
 
-    def ask(self, npc, question, trust, memories=None, history=None, rules=None, consensus=None):
+    def ask(self, npc, question, trust, memories=None, history=None, rules=None,
+            consensus=None, fame=False):
         last_err = None
         for client in self.chain:
             try:
-                data = client.ask(npc, question, trust, memories, history, rules, consensus)
+                data = client.ask(npc, question, trust, memories, history, rules,
+                                  consensus, fame=fame)
                 dlg = data.get("dialogue") or ""
                 if dlg and not self._looks_like_leak(dlg):
                     return data
@@ -185,7 +191,8 @@ class HybridLLM:
                 last_err = e
                 print(f"[HybridLLM] {client.name} 失败：{type(e).__name__}: {str(e)[:100]}")
         print(f"[HybridLLM] 全链失败，回退离线：{last_err}")
-        return self.fallback.ask(npc, question, trust, memories, history, rules, consensus)
+        return self.fallback.ask(npc, question, trust, memories, history, rules,
+                                 consensus, fame=fame)
 
 
 def _env(*names):

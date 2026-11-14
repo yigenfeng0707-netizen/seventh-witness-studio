@@ -5,6 +5,7 @@ AI+∞ 开发者创作大赛 ·「AI 造游戏」参赛作品
 """
 
 import os
+import traceback
 # 本地自检必须绕过系统代理，否则 gradio 会误判 localhost 不可访问
 os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
 os.environ.setdefault("NO_PROXY", "127.0.0.1,localhost")
@@ -634,7 +635,13 @@ def do_ask(question, chat, state):
         return (chat, clock, status, clue, gr.Group(visible=True),
                 engine.end_markdown(state), q, gr.skip(), gr.skip(), gr.skip())
     if q:
-        res = engine.ask(state, state["cur"], q, LLM)
+        try:
+            res = engine.ask(state, state["cur"], q, LLM)
+        except Exception:
+            # 任何 LLM/引擎异常都不外露给玩家：记录日志，回一句角色化兜底。
+            traceback.print_exc()
+            res = {"reply": "（他沉默了片刻，似乎在斟酌措辞，终究没有作答。）",
+                   "clue": None, "timeup": False}
         npc_name = engine.CD(state)["npcs"][state["cur"]]["name"]
         chat.append({"role": "user", "content": f"🧑‍✈️ 侦探：{q}"})
         chat.append({"role": "assistant", "content": f"{npc_name}：{res['reply']}"})
@@ -665,7 +672,11 @@ def do_present(ev_label, chat, state):
         return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
     ev_name = ev_label.split(" — ")[0]
     chat.append({"role": "user", "content": f"🧑‍✈️ 侦探出示了证物：{ev_name}"})
-    res = engine.present_evidence(state, state["cur"], ev_id)
+    try:
+        res = engine.present_evidence(state, state["cur"], ev_id)
+    except Exception:
+        traceback.print_exc()
+        res = {"reply": "（他瞥了一眼，没有接话。）", "clue": None, "timeup": False}
     chat.append({"role": "assistant", "content": f"{npc['name']}：{res['reply']}"})
     if res["clue"]:
         chat.append({"role": "assistant", "content": "🔎 【关键线索解锁！查看右侧线索板】"})
@@ -851,4 +862,4 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
 if __name__ == "__main__":
     # 创空间容器必须监听 0.0.0.0:7860；本地默认同配置，无副作用
     demo.launch(server_name=os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0"),
-                server_port=7860, share=False, show_error=True)
+                server_port=7860, share=False, show_error=False)
