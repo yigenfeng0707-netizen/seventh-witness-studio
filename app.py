@@ -608,12 +608,12 @@ def do_restart(case_label, diff_label, rank_code):
             engine.clue_board(st), gr.Group(visible=False), gr.skip(), "",
             gr.update(choices=list(npc_l.values()), value=npc_l[st["cur"]]),
             gr.update(choices=ev_l, value=None),
-            f"assets/avatars/{st['cur']}.png",
+            avatar_of(cid, st["cur"]),
             gr.skip(), gr.skip(), st, gr.skip())
 
 
 def avatar_of(case_id, npc_id):
-    return f"assets/avatars/{npc_id}.png"
+    return os.path.abspath(os.path.join("assets", "avatars", f"{npc_id}.png"))
 
 
 def do_switch(label, chat, state):
@@ -727,7 +727,7 @@ def do_load(code):
             engine.end_markdown(st) if ended else gr.skip(),
             "", gr.update(choices=list(npc_l.values()), value=npc_l[cur]),
             gr.update(choices=ev_l, value=None),
-            f"assets/avatars/{cur}.png",
+            avatar_of(cid, cur),
             gr.update(value=next(cl for cl in CASE_LABELS if CASE_LABEL_TO_ID[cl] == cid)),
             gr.update(value=diff_label),
             st, "")
@@ -739,8 +739,8 @@ def do_card(state, rank_code):
     tier, _w, _c1, _c2 = parse_rank(rank_code)
     rank_name = RANKS[tier][1]
     v = state.get("verdict") or "TIMEUP"
-    rating_txt = {"WIN_S": "⭐⭐⭐ S 级破案", "WIN_A": "⭐⭐ A 级破案",
-                  "WIN_B": "⭐ B 级结案", "LOSE": "✖ 冤案", "TIMEUP": "⏳ 超时"}[v]
+    rating_txt = {"WIN_S": "★★★ S 级破案", "WIN_A": "★★ A 级破案",
+                  "WIN_B": "★ B 级结案", "LOSE": "X 冤案", "TIMEUP": "超时"}[v]
     W, H = 1200, 630
     img = PILImage.new("RGB", (W, H), (10, 14, 23))
     d = ImageDraw.Draw(img)
@@ -755,7 +755,7 @@ def do_card(state, rank_code):
         font_big = font_mid = font_sm = ImageFont.load_default()
     d.rectangle([14, 14, W - 15, H - 15], outline=(212, 169, 78), width=4)
     d.rectangle([26, 26, W - 27, H - 27], outline=(120, 100, 55), width=1)
-    d.text((W // 2, 92), "🎖️ 侦探成绩卡", font=font_big, fill=(236, 208, 138), anchor="mm")
+    d.text((W // 2, 92), "侦探成绩卡", font=font_big, fill=(236, 208, 138), anchor="mm")
     d.text((W // 2, 190), rating_txt, font=font_big, fill=(255, 242, 236), anchor="mm")
     d.text((W // 2, 290), f"《{c['title']}》", font=font_mid, fill=(236, 208, 138), anchor="mm")
     d.text((W // 2 - 10, 370), f"剩余审讯时间：{state['time']} 分钟",
@@ -766,12 +766,12 @@ def do_card(state, rank_code):
            font=font_sm, fill=(236, 208, 138), anchor="mm")
     d.text((W // 2, 560), "试玩：https://gsym236998-seventh-witness.ms.show",
            font=font_sm, fill=(236, 208, 138), anchor="mm")
-    d.text((W // 2, 596), "🎖️ AI+∞ 开发者创作大赛 · 第三期「AI 造游戏」",
+    d.text((W // 2, 596), "AI+∞ 开发者创作大赛 · 第三期「AI 造游戏」",
            font=ImageFont.truetype(r"C:\Windows\Fonts\simhei.ttf", 22),
            fill=(170, 179, 197), anchor="mm")
     out_path = os.path.join("assets", "_report_card.png")
     img.save(out_path)
-    return out_path
+    return out_path, gr.update(visible=True)
 
 
 with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
@@ -854,7 +854,7 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
     ev_btn.click(do_present, [ev_dd, chat, state], OUT)
     accuse_btn.click(do_accuse, [accuse_dd, chat, state], OUT)
     restart_btn.click(do_restart, [case_dd, diff_radio, rank_code], FULL)
-    card_btn.click(do_card, [state, rank_code], [card_img])
+    card_btn.click(do_card, [state, rank_code], [card_img, card_img])
     save_btn.click(do_export, [state], [save_box])
     load_btn.click(do_load, [save_box], FULL)
     for b, qq in zip(quick_btns, CASES["clock"]["quick_qs"]):
