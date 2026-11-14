@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r re
     || pip install --no-cache-dir -r requirements.txt
 
 COPY app.py game_data.py llm_client.py npc_engine.py ./
+COPY assets/fonts ./assets/fonts
 
 EXPOSE 7860
 ENTRYPOINT ["python", "app.py"]

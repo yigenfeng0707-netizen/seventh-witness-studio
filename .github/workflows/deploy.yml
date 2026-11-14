@@ -32,7 +32,8 @@ jobs:
           for f in app.py game_data.py llm_client.py npc_engine.py requirements.txt Dockerfile README.md make_portraits.py; do
             cp "$GITHUB_WORKSPACE/$f" .
           done
-          cp -r "$GITHUB_WORKSPACE/assets" ./assets
+          mkdir -p assets
+          cp -r "$GITHUB_WORKSPACE/assets/." ./assets/
           git config user.email "actions@github.com"
           git config user.name "github-actions"
           git add -A -f

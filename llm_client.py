@@ -14,6 +14,7 @@
 import json
 import os
 import re
+import time
 
 import game_data as G
 
@@ -98,7 +99,8 @@ class OpenAICompatLLM(_OpenAIBase):
     def __init__(self, name, base, model, key, no_thinking=False,
                  temperature=0.85, max_tokens=300):
         from openai import OpenAI
-        self.client = OpenAI(api_key=key, base_url=base, timeout=30, max_retries=1)
+        # 评审现场优先“快速失败 + 切下一环”，不让玩家干等 30 秒。
+        self.client = OpenAI(api_key=key, base_url=base, timeout=10, max_retries=0)
         self.model = model
         self.name = name
         self._kw = dict(temperature=temperature, max_tokens=max_tokens)
@@ -133,7 +135,7 @@ class ModelScopeLLM(_OpenAIBase):
             raise ValueError("缺少 MODELSCOPE_API_TOKEN")
         base = os.environ.get("MODELSCOPE_API_BASE",
                               "https://api-inference.modelscope.cn/v1")
-        self.client = OpenAI(api_key=token, base_url=base, timeout=30)
+        self.client = OpenAI(api_key=token, base_url=base, timeout=10, max_retries=0)
         self.model = model or os.environ.get("MSC_MODEL",
                                              "Qwen/Qwen3.8-Flash-Next")
         self.name = f"ModelScopeAPI（{self.model}）"
@@ -174,21 +176,35 @@ class HybridLLM:
         self.chain = chain
         self.fallback = MockLLM()
         self.name = " → ".join(c.name for c in chain) + " → 离线兜底"
+        self._fails = {}      # id(client) -> 连续失败次数
+        self._cooldown = {}   # id(client) -> 冷却截止时间
 
     def ask(self, npc, question, trust, memories=None, history=None, rules=None,
             consensus=None, fame=False):
         last_err = None
+        now = time.time()
         for client in self.chain:
+            key = id(client)
+            if self._cooldown.get(key, 0) > now:
+                print(f"[HybridLLM] {client.name} 冷却中，跳过")
+                continue
             try:
                 data = client.ask(npc, question, trust, memories, history, rules,
                                   consensus, fame=fame)
                 dlg = data.get("dialogue") or ""
                 if dlg and not self._looks_like_leak(dlg):
+                    self._fails.pop(key, None)
+                    self._cooldown.pop(key, None)
                     return data
                 last_err = RuntimeError("empty/off-character dialogue")
                 print(f"[HybridLLM] {client.name} 台词无效（出戏/空），跳过")
             except Exception as e:
                 last_err = e
+                n = self._fails.get(key, 0) + 1
+                self._fails[key] = n
+                if n >= 2:
+                    self._cooldown[key] = now + 60
+                    print(f"[HybridLLM] {client.name} 连续失败 {n} 次，冷却 60s")
                 print(f"[HybridLLM] {client.name} 失败：{type(e).__name__}: {str(e)[:100]}")
         print(f"[HybridLLM] 全链失败，回退离线：{last_err}")
         return self.fallback.ask(npc, question, trust, memories, history, rules,

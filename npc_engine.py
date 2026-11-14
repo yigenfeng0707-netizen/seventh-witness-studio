@@ -34,6 +34,7 @@ def new_game(case_id="clock", difficulty="normal", rank_tier=0, fame_ch1=False):
         "evidence_ids": [e["id"] for e in ev_list],
         "evidence_shown": {},
         "time": minutes,
+        "start_time": minutes,
         "clues": [],
         "ended": False,
         "verdict": None,
@@ -148,6 +149,16 @@ def from_json(code):
         raise ValueError("存档码无效")
     if st["case_id"] not in G.CASES:
         raise ValueError("存档码所属案件不存在")
+    # 兼容 v3.1 旧存档：evidence_shown 从 {ev: npc} 迁移到 {"ev:npc": True}
+    shown = st.get("evidence_shown")
+    fixed = {}
+    if isinstance(shown, dict):
+        for k, v in shown.items():
+            if isinstance(v, str):
+                fixed[f"{k}:{v}"] = True
+            elif v:
+                fixed[k] = True
+    st["evidence_shown"] = fixed
     return st
 
 
@@ -163,9 +174,10 @@ def present_evidence(state, npc_id, ev_id):
         return {"reply": "（这件证物不属于当前案件。）", "clue": None, "timeup": False}
     npc, st = c["npcs"][npc_id], state["npc"][npc_id]
 
-    if state["evidence_shown"].get(ev_id) == npc_id:
+    shown_key = f"{ev_id}:{npc_id}"
+    if state["evidence_shown"].get(shown_key):
         return {"reply": f"（{npc['name']}别过头去）这件东西，刚才不是看过了吗……", "clue": None, "timeup": False}
-    state["evidence_shown"][ev_id] = npc_id
+    state["evidence_shown"][shown_key] = True
     state["time"] = max(0, state["time"] - COST_EVIDENCE)
 
     conf = npc["confessions"].get(ev_id)
@@ -214,11 +226,14 @@ def end_markdown(state):
 
 def clock_md(state):
     c = CD(state)
+    start = state.get("start_time", c.get("start_minutes", START_MINUTES))
     hint = ""
-    if state["time"] <= c.get("start_minutes", START_MINUTES) - 18:
+    if state["time"] <= start - 18:
         hint = "\n\n💡 *证物各有其主——对的人面前，才有用。*"
+    warn = "　⚠️ **时间不多了**" if 0 < state["time"] <= 10 else ""
     tag = " · 困难" if state.get("difficulty") == "hard" else ""
-    return f"⏱️ **剩余审讯时间：{state['time']} 分钟**{tag}{hint}"
+    return (f"⏱️ **剩余审讯时间：{state['time']} 分钟**{tag}"
+            f"　｜　🔎 **线索 {len(state['clues'])}/{len(c['key_clues'])}**{warn}{hint}")
 
 
 def status_card(state, npc_id):

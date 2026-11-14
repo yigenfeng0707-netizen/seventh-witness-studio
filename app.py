@@ -38,6 +38,7 @@ def _patch_gradio44_schema_bug():
 _patch_gradio44_schema_bug()
 
 import gradio as gr
+from PIL import Image as PILImage, ImageDraw, ImageFont
 
 import npc_engine as engine
 from game_data import CASES, GAME_TITLE, RANKS, XP_GAIN
@@ -70,6 +71,13 @@ def ev_map_for(case_id, difficulty):
     evs = list(c["evidence"]) + (list(c.get("hard_evidence", []))
                                  if difficulty == "hard" else [])
     return {f"{e['name']} — {e['desc']}": e["id"] for e in evs}
+
+
+def quick_updates(case_id):
+    """4 个快捷问题按钮随案件切换；不足 4 个时隐藏多余按钮。"""
+    qs = CASES[case_id]["quick_qs"]
+    return [gr.update(value=qs[i], visible=True) if i < len(qs)
+            else gr.update(visible=False) for i in range(4)]
 
 
 def parse_rank(code):
@@ -580,7 +588,7 @@ SOUND_JS = r"""
 
 # 统一输出槽位（见 Blocks 内定义）
 OUT = None      # 9 项：常规刷新
-FULL = None     # 13 项：全量刷新（含案件/难度/状态/存档）
+FULL = None     # 19 项：全量刷新（含案件/难度/状态/存档/指认/快捷问题/成绩卡）
 
 
 def _msgs(text):
@@ -596,20 +604,28 @@ def do_restart(case_label, diff_label, rank_code):
     if difficulty == "hard" and wins_any < 1:
         gr.Warning("🔒 困难模式需先以 S/A 评级通关任意一章")
         difficulty = "normal"
+        diff_label = "普通"
     if cid == "letter" and ch1_sa != 1:
         gr.Warning("🔒 第二章需先以 S/A 评级通关第一章")
         cid = "clock"
         case_label = CASES["clock"]["case_label"]
 
+    c = CASES[cid]
     st = engine.new_game(cid, difficulty, tier)
     greet = engine.switch(st, st["cur"])
+    intro = (f"📜 **【卷宗 · {c['case_label']}】**\n\n{c['brief']}\n\n"
+             f"🎯 **目标**：在 {st['time']} 分钟内集齐 {len(c['key_clues'])} 条关键线索，"
+             f"从 {len(c['accuse_options'])} 人中指认真凶。\n\n"
+             f"—— {greet}")
     npc_l = npc_labels_for(cid)
     ev_l = ev_labels_for(cid, difficulty)
-    return (_msgs(greet), engine.clock_md(st), engine.status_card(st, st["cur"]),
+    return (_msgs(intro), engine.clock_md(st), engine.status_card(st, st["cur"]),
             engine.clue_board(st), gr.Group(visible=False), gr.skip(), "",
             gr.update(choices=list(npc_l.values()), value=npc_l[st["cur"]]),
             gr.update(choices=ev_l, value=None),
-            gr.skip(), gr.skip(), st, gr.skip())
+            gr.update(value=case_label), gr.update(value=diff_label), st, gr.skip(),
+            gr.update(choices=c["accuse_options"], value=None),
+            *quick_updates(cid), gr.update(value=None, visible=False))
 
 
 def do_switch(label, chat, state):
@@ -635,6 +651,7 @@ def do_ask(question, chat, state):
         return (chat, clock, status, clue, gr.Group(visible=True),
                 engine.end_markdown(state), q, gr.skip(), gr.skip(), gr.skip())
     if q:
+        before_trust = state["npc"][state["cur"]]["trust"]
         try:
             res = engine.ask(state, state["cur"], q, LLM)
         except Exception:
@@ -643,8 +660,11 @@ def do_ask(question, chat, state):
             res = {"reply": "（他沉默了片刻，似乎在斟酌措辞，终究没有作答。）",
                    "clue": None, "timeup": False}
         npc_name = engine.CD(state)["npcs"][state["cur"]]["name"]
+        delta = state["npc"][state["cur"]]["trust"] - before_trust
         chat.append({"role": "user", "content": f"🧑‍✈️ 侦探：{q}"})
         chat.append({"role": "assistant", "content": f"{npc_name}：{res['reply']}"})
+        if delta:
+            chat.append({"role": "assistant", "content": f"（{npc_name} 的信任 {delta:+d}）"})
         if res["clue"]:
             chat.append({"role": "assistant", "content": "🔎 【关键线索解锁！查看右侧线索板】"})
         clock = engine.clock_md(state)
@@ -652,7 +672,7 @@ def do_ask(question, chat, state):
         clue = engine.clue_board(state)
         if res["timeup"]:
             grp, md = gr.Group(visible=True), engine.end_markdown(state)
-    return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
+    return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip())
 
 
 def do_present(ev_label, chat, state):
@@ -671,13 +691,17 @@ def do_present(ev_label, chat, state):
         chat.append({"role": "assistant", "content": "（先在证物栏里选一件证物，再出示。）"})
         return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
     ev_name = ev_label.split(" — ")[0]
+    before_trust = state["npc"][state["cur"]]["trust"]
     chat.append({"role": "user", "content": f"🧑‍✈️ 侦探出示了证物：{ev_name}"})
     try:
         res = engine.present_evidence(state, state["cur"], ev_id)
     except Exception:
         traceback.print_exc()
         res = {"reply": "（他瞥了一眼，没有接话。）", "clue": None, "timeup": False}
+    delta = state["npc"][state["cur"]]["trust"] - before_trust
     chat.append({"role": "assistant", "content": f"{npc['name']}：{res['reply']}"})
+    if delta:
+        chat.append({"role": "assistant", "content": f"（{npc['name']} 的信任 {delta:+d}）"})
     if res["clue"]:
         chat.append({"role": "assistant", "content": "🔎 【关键线索解锁！查看右侧线索板】"})
     clock = engine.clock_md(state)
@@ -685,7 +709,7 @@ def do_present(ev_label, chat, state):
     clue = engine.clue_board(state)
     if res["timeup"]:
         grp, md = gr.Group(visible=True), engine.end_markdown(state)
-    return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
+    return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip())
 
 
 def do_accuse(choice, chat, state):
@@ -693,14 +717,23 @@ def do_accuse(choice, chat, state):
     clock = engine.clock_md(state)
     status = engine.status_card(state, state["cur"])
     clue = engine.clue_board(state)
+    card_reset = gr.update(value=None, visible=False)
     if not choice:
         chat.append({"role": "assistant",
                      "content": "（请先从名单中选择一个名字，再按下结案指认。）"})
-        return (chat, clock, status, clue, gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
+        return (chat, clock, status, clue, gr.skip(), gr.skip(), gr.skip(), gr.skip(),
+                gr.skip(), card_reset)
     if not state["ended"]:
-        engine.accuse(state, choice)
+        try:
+            engine.accuse(state, choice)
+        except Exception:
+            traceback.print_exc()
+            chat.append({"role": "assistant",
+                         "content": "（结案文书出了点岔子，请再按一次指认。）"})
+            return (chat, clock, status, clue, gr.skip(), gr.skip(), gr.skip(), gr.skip(),
+                    gr.skip(), card_reset)
     return (chat, clock, status, clue, gr.Group(visible=True),
-            engine.end_markdown(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
+            engine.end_markdown(state), gr.skip(), gr.skip(), gr.skip(), card_reset)
 
 
 def do_quick_ask(question, chat, state):
@@ -720,61 +753,85 @@ def do_load(code):
     except ValueError as e:
         raise gr.Error(str(e))
     cid = st["case_id"]
+    c = CASES[cid]
     diff_label = "困难" if st.get("difficulty") == "hard" else "普通"
-    cur = st.get("cur") or CASES[cid]["default_npc"]
+    cur = st.get("cur") or c["default_npc"]
     npc_l = npc_labels_for(cid)
     ev_l = ev_labels_for(cid, st.get("difficulty", "normal"))
     greet = engine.switch(st, cur)
+    greet = (f"📂 **已读取存档：{c['case_label']}**"
+             f"（剩余 {st['time']} 分钟，线索 {len(st['clues'])}/{len(c['key_clues'])}）\n\n{great}")
     ended = bool(st.get("ended", False))
     return (_msgs(greet), engine.clock_md(st), engine.status_card(st, cur),
             engine.clue_board(st), gr.Group(visible=ended),
             engine.end_markdown(st) if ended else gr.skip(),
             "", gr.update(choices=list(npc_l.values()), value=npc_l[cur]),
             gr.update(choices=ev_l, value=None),
-            gr.update(value=next(cl for cl in CASE_LABELS if CASE_LABEL_TO_ID[cl] == cid)),
-            gr.update(value=diff_label),
-            st, "")
+            gr.update(value=c["case_label"]), gr.update(value=diff_label),
+            st, "",
+            gr.update(choices=c["accuse_options"], value=None),
+            *quick_updates(cid), gr.update(value=None, visible=False))
+
+
+def _card_font(size):
+    """成绩卡字体：仓库内置 Noto Sans SC 优先，保证 Linux 容器中文可渲染。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(here, "assets", "fonts", "NotoSansSC-Regular.otf"),
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        r"C:\Windows\Fonts\msyh.ttc",
+        r"C:\Windows\Fonts\simhei.ttf",
+    ]
+    for path in candidates:
+        try:
+            if os.path.exists(path):
+                return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
 
 
 def do_card(state, rank_code):
-    from PIL import Image as PILImage, ImageDraw, ImageFont
-    c = engine.CD(state)
-    tier, _w, _c1, _c2 = parse_rank(rank_code)
-    rank_name = RANKS[tier][1]
-    v = state.get("verdict") or "TIMEUP"
-    rating_txt = {"WIN_S": "★★★ S 级破案", "WIN_A": "★★ A 级破案",
-                  "WIN_B": "★ B 级结案", "LOSE": "X 冤案", "TIMEUP": "超时"}[v]
-    W, H = 1200, 630
-    img = PILImage.new("RGB", (W, H), (10, 14, 23))
-    d = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        d.line([(0, y), (W, y)], fill=(int(13 + 8 * (1 - t)), int(19 + 6 * (1 - t)), int(32 + 4 * (1 - t))))
+    if not state.get("ended"):
+        gr.Warning("结案后才能生成成绩卡")
+        return gr.update(value=None, visible=False)
     try:
-        font_big = ImageFont.truetype(r"C:\Windows\Fonts\simhei.ttf", 72)
-        font_mid = ImageFont.truetype(r"C:\Windows\Fonts\simhei.ttf", 40)
-        font_sm = ImageFont.truetype(r"C:\Windows\Fonts\simhei.ttf", 28)
+        c = engine.CD(state)
+        tier, _w, _c1, _c2 = parse_rank(rank_code)
+        tier = max(0, min(tier, len(RANKS) - 1))
+        rank_name = RANKS[tier][1]
+        v = state.get("verdict") or "TIMEUP"
+        rating_txt = {"WIN_S": "★★★ S 级破案", "WIN_A": "★★ A 级破案",
+                      "WIN_B": "★ B 级结案", "LOSE": "X 冤案", "TIMEUP": "超时"}[v]
+        W, H = 1200, 630
+        img = PILImage.new("RGB", (W, H), (10, 14, 23))
+        d = ImageDraw.Draw(img)
+        for y in range(H):
+            t = y / H
+            d.line([(0, y), (W, y)],
+                   fill=(int(13 + 8 * (1 - t)), int(19 + 6 * (1 - t)), int(32 + 4 * (1 - t))))
+        font_big, font_mid, font_sm, font_xs = (
+            _card_font(72), _card_font(40), _card_font(28), _card_font(22))
+        d.rectangle([14, 14, W - 15, H - 15], outline=(212, 169, 78), width=4)
+        d.rectangle([26, 26, W - 27, H - 27], outline=(120, 100, 55), width=1)
+        d.text((W // 2, 92), "侦探成绩卡", font=font_big, fill=(236, 208, 138), anchor="mm")
+        d.text((W // 2, 190), rating_txt, font=font_big, fill=(255, 242, 236), anchor="mm")
+        d.text((W // 2, 290), f"《{c['title']}》", font=font_mid, fill=(236, 208, 138), anchor="mm")
+        d.text((W // 2 - 10, 370), f"剩余审讯时间：{state['time']} 分钟",
+               font=font_sm, fill=(236, 208, 138), anchor="mm")
+        d.text((W // 2 - 10, 420), f"关键线索：{len(state['clues'])}/{len(c['key_clues'])}",
+               font=font_sm, fill=(236, 208, 138), anchor="mm")
+        d.text((W // 2 - 10, 470), f"侦探警衔：{rank_name}",
+               font=font_sm, fill=(236, 208, 138), anchor="mm")
+        d.text((W // 2, 560), "试玩：https://gsym236998-seventh-witness.ms.show",
+               font=font_sm, fill=(236, 208, 138), anchor="mm")
+        d.text((W // 2, 596), "AI+∞ 开发者创作大赛 · 第三期「AI 造游戏」",
+               font=font_xs, fill=(170, 179, 197), anchor="mm")
+        return gr.update(value=img, visible=True)
     except Exception:
-        font_big = font_mid = font_sm = ImageFont.load_default()
-    d.rectangle([14, 14, W - 15, H - 15], outline=(212, 169, 78), width=4)
-    d.rectangle([26, 26, W - 27, H - 27], outline=(120, 100, 55), width=1)
-    d.text((W // 2, 92), "侦探成绩卡", font=font_big, fill=(236, 208, 138), anchor="mm")
-    d.text((W // 2, 190), rating_txt, font=font_big, fill=(255, 242, 236), anchor="mm")
-    d.text((W // 2, 290), f"《{c['title']}》", font=font_mid, fill=(236, 208, 138), anchor="mm")
-    d.text((W // 2 - 10, 370), f"剩余审讯时间：{state['time']} 分钟",
-           font=font_sm, fill=(236, 208, 138), anchor="mm")
-    d.text((W // 2 - 10, 420), f"关键线索：{len(state['clues'])}/{len(c['key_clues'])}",
-           font=font_sm, fill=(236, 208, 138), anchor="mm")
-    d.text((W // 2 - 10, 470), f"侦探警衔：{rank_name}",
-           font=font_sm, fill=(236, 208, 138), anchor="mm")
-    d.text((W // 2, 560), "试玩：https://gsym236998-seventh-witness.ms.show",
-           font=font_sm, fill=(236, 208, 138), anchor="mm")
-    d.text((W // 2, 596), "AI+∞ 开发者创作大赛 · 第三期「AI 造游戏」",
-           font=ImageFont.truetype(r"C:\Windows\Fonts\simhei.ttf", 22),
-           fill=(170, 179, 197), anchor="mm")
-    out_path = os.path.join("assets", "_report_card.png")
-    img.save(out_path)
-    return out_path, gr.update(visible=True)
+        traceback.print_exc()
+        gr.Warning("成绩卡生成失败，请稍后再试")
+        return gr.update(value=None, visible=False)
 
 
 with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
@@ -821,6 +878,13 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
             status_md = gr.Markdown(elem_classes=["status-card"])
             with gr.Accordion("🔎 线索板", open=True):
                 clue_md = gr.Markdown(elem_classes=["clue-board"])
+            with gr.Accordion("❓ 怎么玩（30 秒上手）", open=False):
+                gr.Markdown(
+                    "1. **提问**：每次 -1 分钟；快捷问题同样扣时。\n"
+                    "2. **出示证据**：每次 -2 分钟；对的证据 × 对的人 = 坦白 + 关键线索。\n"
+                    "3. **指认**：集齐线索后随时可指认；线索数决定 S/A/B，指认错误是冤案。\n"
+                    "4. **信任**：<15 被逐客（额外 -2 分钟）；<25 拒答关键案情；≥85 会主动透话。"
+                )
             accuse_dd = gr.Dropdown(choices=CASES["clock"]["accuse_options"],
                                     label="指认真凶（一锤定音，慎重！）",
                                     elem_classes=["accuse-dd"])
@@ -842,7 +906,8 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
         restart_btn = gr.Button("🔄 重新开始")
 
     OUT = [chat, clock_md, status_md, clue_md, verdict_grp, verdict_md, q_box, npc_dd, ev_dd]
-    FULL = OUT + [case_dd, diff_radio, state, save_box]
+    FULL = (OUT + [case_dd, diff_radio, state, save_box, accuse_dd]
+            + quick_btns + [card_img])
 
     demo.load(do_restart, [case_dd, diff_radio, rank_code], FULL)
     apply_btn.click(do_restart, [case_dd, diff_radio, rank_code], FULL)
@@ -851,9 +916,9 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
     npc_dd.change(do_switch, [npc_dd, chat, state], OUT)
     q_box.submit(do_ask, [q_box, chat, state], OUT)
     ev_btn.click(do_present, [ev_dd, chat, state], OUT)
-    accuse_btn.click(do_accuse, [accuse_dd, chat, state], OUT)
+    accuse_btn.click(do_accuse, [accuse_dd, chat, state], OUT + [card_img])
     restart_btn.click(do_restart, [case_dd, diff_radio, rank_code], FULL)
-    card_btn.click(do_card, [state, rank_code], [card_img, card_img])
+    card_btn.click(do_card, [state, rank_code], [card_img])
     save_btn.click(do_export, [state], [save_box])
     load_btn.click(do_load, [save_box], FULL)
     for b, qq in zip(quick_btns, CASES["clock"]["quick_qs"]):
