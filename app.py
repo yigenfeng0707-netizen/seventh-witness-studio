@@ -815,7 +815,7 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
                                    elem_classes=["evidence-btn"])
         with gr.Column(scale=3):
             clock_md = gr.Markdown(elem_classes=["hud-clock"])
-            avatar_img = gr.Image(value="assets/avatars/wang.png", interactive=False,
+            avatar_img = gr.Image(value=os.path.abspath(os.path.join("assets", "avatars", "wang.png")), interactive=False,
                                   show_label=False, elem_classes=["avatar-card"],
                                   height=260, container=False)
             status_md = gr.Markdown(elem_classes=["status-card"])
