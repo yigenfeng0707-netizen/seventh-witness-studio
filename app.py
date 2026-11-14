@@ -649,7 +649,7 @@ def do_ask(question, chat, state):
     grp, md = gr.skip(), gr.skip()
     if state["ended"]:
         return (chat, clock, status, clue, gr.Group(visible=True),
-                engine.end_markdown(state), q, gr.skip(), gr.skip(), gr.skip())
+                engine.end_markdown(state), q, gr.skip(), gr.skip())
     if q:
         before_trust = state["npc"][state["cur"]]["trust"]
         try:
@@ -683,13 +683,13 @@ def do_present(ev_label, chat, state):
     grp, md = gr.skip(), gr.skip()
     if state["ended"]:
         return (chat, clock, status, clue, gr.Group(visible=True),
-                engine.end_markdown(state), "", gr.skip(), gr.skip(), gr.skip())
+                engine.end_markdown(state), "", gr.skip(), gr.skip())
     ev_map = ev_map_for(state["case_id"], state.get("difficulty", "normal"))
     npc = engine.CD(state)["npcs"][state["cur"]]
     ev_id = ev_map.get(ev_label or "")
     if not ev_id:
         chat.append({"role": "assistant", "content": "（先在证物栏里选一件证物，再出示。）"})
-        return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
+        return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip())
     ev_name = ev_label.split(" — ")[0]
     before_trust = state["npc"][state["cur"]]["trust"]
     chat.append({"role": "user", "content": f"🧑‍✈️ 侦探出示了证物：{ev_name}"})
@@ -760,7 +760,7 @@ def do_load(code):
     ev_l = ev_labels_for(cid, st.get("difficulty", "normal"))
     greet = engine.switch(st, cur)
     greet = (f"📂 **已读取存档：{c['case_label']}**"
-             f"（剩余 {st['time']} 分钟，线索 {len(st['clues'])}/{len(c['key_clues'])}）\n\n{great}")
+             f"（剩余 {st['time']} 分钟，线索 {len(st['clues'])}/{len(c['key_clues'])}）\n\n{greet}")
     ended = bool(st.get("ended", False))
     return (_msgs(greet), engine.clock_md(st), engine.status_card(st, cur),
             engine.clue_board(st), gr.Group(visible=ended),
