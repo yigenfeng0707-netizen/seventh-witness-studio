@@ -11,8 +11,8 @@ def CD(state):
     return G.CASES[state["case_id"]]
 
 
-def new_game(case_id="clock", difficulty="normal", rank_tier=0):
-    """开新局：案件 × 难度 × 警衔特权。"""
+def new_game(case_id="clock", difficulty="normal", rank_tier=0, fame_ch1=False):
+    """开新局：案件 × 难度 × 警衔特权 × 跨局声望。"""
     c = G.CASES[case_id]
     hard = difficulty == "hard"
     minutes = (G.HARD_MINUTES if hard else c.get("start_minutes", G.START_MINUTES))
@@ -38,6 +38,7 @@ def new_game(case_id="clock", difficulty="normal", rank_tier=0):
         "ended": False,
         "verdict": None,
         "last_choice": "",
+        "fame": bool(fame_ch1) and case_id == "letter",
     }
 
 
@@ -95,7 +96,8 @@ def ask(state, npc_id, question, llm):
 
     reply = llm.ask(npc, question, st["trust"],
                     st["memories"], st["history"],
-                    rules=c["topic_rules"], consensus=c.get("consensus"))
+                    rules=c["topic_rules"], consensus=c.get("consensus"),
+                    fame=st.get("fame", False))
 
     state["time"] = max(0, state["time"] - COST_TALK)
     st["trust"] = max(5, min(100, st["trust"] + reply.get("trust_change", 0)))

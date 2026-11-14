@@ -33,7 +33,7 @@ class MockLLM:
     name = "MockLLM（离线规则）"
 
     def ask(self, npc, question, trust, memories=None, history=None,
-            rules=None, consensus=None):
+            rules=None, consensus=None, fame=False):
         topic, tc = _match_topic(question, rules)
         lines = npc["lines"]
         line = lines.get(topic, lines["default"])
