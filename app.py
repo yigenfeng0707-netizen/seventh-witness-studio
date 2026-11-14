@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""《第七位证人》—— AI 审讯推理游戏
+"""《第七位证人》—— AI 审讯推理游戏（奇案集 v3：警衔/章节/难度/存档）
 AI+∞ 开发者创作大赛 ·「AI 造游戏」参赛作品
 本地运行：python app.py  →  http://127.0.0.1:7860
 """
@@ -39,17 +39,50 @@ _patch_gradio44_schema_bug()
 import gradio as gr
 
 import npc_engine as engine
-from game_data import (ACCUSE_OPTIONS, CASE_BRIEF, CASE_TITLE, DEFAULT_NPC,
-                       EVIDENCE, NPCS, QUICK_QS)
-from llm_client import get_llm
+from game_data import CASES, GAME_TITLE, RANKS, XP_GAIN
 
-LLM = get_llm()
+LLM = engine.G and __import__("llm_client").get_llm()
 print(f"[llm] 使用引擎：{LLM.name}")
 
-NPC_LABELS = {nid: f"{v['emoji']} {v['name']}（{v['role']}）" for nid, v in NPCS.items()}
-ID_BY_LABEL = {v: k for k, v in NPC_LABELS.items()}
-EV_OPTIONS = [f"{e['name']} — {e['desc']}" for e in EVIDENCE]
-EV_ID_BY_LABEL = {f"{e['name']} — {e['desc']}": e["id"] for e in EVIDENCE}
+CASE_ORDER = ["clock", "letter"]
+CASE_LABELS = [CASES[cid]["case_label"] for cid in CASE_ORDER]
+CASE_LABEL_TO_ID = {CASES[cid]["case_label"]: cid for cid in CASE_ORDER}
+DIFF_LABELS = ["普通", "困难"]
+
+SA_SET = ("S", "A")
+
+
+def npc_labels_for(case_id):
+    return {nid: f"{v['emoji']} {v['name']}（{v['role']}）"
+            for nid, v in CASES[case_id]["npcs"].items()}
+
+
+def ev_labels_for(case_id, difficulty):
+    c = CASES[case_id]
+    evs = list(c["evidence"]) + (list(c.get("hard_evidence", []))
+                                 if difficulty == "hard" else [])
+    return [f"{e['name']} — {e['desc']}" for e in evs]
+
+
+def ev_map_for(case_id, difficulty):
+    c = CASES[case_id]
+    evs = list(c["evidence"]) + (list(c.get("hard_evidence", []))
+                                 if difficulty == "hard" else [])
+    return {f"{e['name']} — {e['desc']}": e["id"] for e in evs}
+
+
+def parse_rank(code):
+    """rank_code = "tier:winsAny:ch1SA:ch2SA"（由前端档案 JS 维护）。"""
+    try:
+        parts = str(code or "").split(":")
+        tier = int(parts[0]) if parts and parts[0].isdigit() else 0
+        wins = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+        ch1 = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        ch2 = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+    except Exception:
+        tier, wins, ch1, ch2 = 0, 0, 0, 0
+    return tier, wins, ch1, ch2
+
 
 CSS = """
 /* ================= 《第七位证人》雾隐镇 · 民国悬疑主题 v2 ================= */
@@ -141,8 +174,8 @@ body, gradio-app, .gradio-container {
   letter-spacing: 0.03em;
 }
 
-/* 审讯对象：人物卡式单选 */
-.npc-picker label {
+/* 审讯对象 / 案件 / 难度：人物卡式单选 */
+.npc-picker label, .case-picker label, .diff-picker label {
   background: var(--panel-2) !important;
   border: 1px solid rgba(170, 179, 197, 0.25) !important;
   border-radius: 12px !important;
@@ -151,13 +184,20 @@ body, gradio-app, .gradio-container {
   color: var(--ink) !important;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
 }
-.npc-picker label:hover { border-color: var(--line-brass) !important; transform: translateY(-1px); }
-.npc-picker label:has(input:checked) {
+.npc-picker label:hover, .case-picker label:hover, .diff-picker label:hover {
+  border-color: var(--line-brass) !important;
+  transform: translateY(-1px);
+}
+.npc-picker label:has(input:checked),
+.case-picker label:has(input:checked),
+.diff-picker label:has(input:checked) {
   border-color: var(--brass) !important;
   background: linear-gradient(180deg, rgba(212, 169, 78, 0.2), rgba(212, 169, 78, 0.07)), var(--panel-2) !important;
   box-shadow: 0 0 0 1px var(--brass), 0 6px 22px rgba(212, 169, 78, 0.22) !important;
 }
-.npc-picker input[type="radio"] { accent-color: var(--brass) !important; }
+.npc-picker input[type="radio"], .case-picker input[type="radio"],
+.diff-picker input[type="radio"] { accent-color: var(--brass) !important; }
+.rank-code, .rank-apply { display: none !important; }
 
 /* 审讯记录（对话）：实色深底 + 高对比亮字 */
 .chat-panel {
@@ -333,67 +373,21 @@ body, gradio-app, .gradio-container {
   text-shadow: 0 0 26px rgba(212, 169, 78, 0.45) !important;
 }
 
+/* 警衔徽章栏 */
+.rank-bar {
+  background: var(--panel-2) !important;
+  border: 1px solid var(--line-brass) !important;
+  border-radius: 12px !important;
+  min-height: 20px;
+}
+.rank-bar b { letter-spacing: 0.04em; }
+
 /* 细节 */
 .gradio-container a { color: var(--brass-hi) !important; }
 .gradio-container ::selection { background: rgba(212, 169, 78, 0.35); }
 .gradio-container ::-webkit-scrollbar { width: 9px; height: 9px; }
 .gradio-container ::-webkit-scrollbar-thumb { background: rgba(212, 169, 78, 0.3); border-radius: 6px; }
 .gradio-container ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
-
-
-/* ================= 响应式：手机 / 平板 / 桌面 ================= */
-/* 平板竖屏与手机（≤900px）：双栏堆叠为单列，审讯流在上、HUD 在下 */
-@media (max-width: 900px) {
-  .gradio-container .row {
-    flex-wrap: wrap !important;
-  }
-  .gradio-container .row > [class*="column"], .gradio-container .row > div[class*="col"],
-  .gradio-container .row > .col, .gradio-container .row > div {
-    flex: 1 1 100% !important;
-    max-width: 100% !important;
-    min-width: 100% !important;
-  }
-  .gradio-container { padding: 0 10px !important; }
-  .gradio-container h1 { font-size: 1.5em !important; }
-
-  /* 人物卡：双列网格，触控目标加大 */
-  .npc-picker {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-  }
-  .npc-picker label {
-    flex: 1 1 46% !important;
-    padding: 12px 10px !important;
-    font-size: 0.95em !important;
-    text-align: center;
-  }
-  .gradio-container button {
-    min-height: 44px !important;
-  }
-  .accuse-btn { font-size: 1.05em !important; }
-}
-
-/* 手机（≤640px）：进一步压缩 */
-@media (max-width: 640px) {
-  .chat-panel { height: 300px !important; }
-  .gradio-container h1 { font-size: 1.3em !important; letter-spacing: 0.03em; }
-  .hud-clock strong { font-size: 1.15em !important; }
-  .npc-picker label { flex: 1 1 100% !important; }
-  .verdict-card { padding: 16px 14px !important; }
-  .verdict-card h2 { font-size: 1.3em !important; }
-}
-
-/* 平板横屏 / 小桌面（901-1279px）：保持双栏，压缩留白 */
-@media (min-width: 901px) and (max-width: 1279px) {
-  .gradio-container { padding: 0 10px !important; }
-  .chat-panel { height: 340px !important; }
-}
-
-/* 大桌面（≥1600px）：放宽版心 */
-@media (min-width: 1600px) {
-  .gradio-container { max-width: 1400px !important; }
-}
 
 /* 手机端 */
 @media (max-width: 640px) {
@@ -427,7 +421,8 @@ SOUND_JS = r"""
     clue:     () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.07, i * 0.09)); },
     evidence: () => { tone(1400, 0.08, 'square', 0.04); tone(900, 0.12, 'triangle', 0.05, 0.06); },
     accuse:   () => { tone(160, 0.5, 'sawtooth', 0.08); tone(220, 0.6, 'sawtooth', 0.06, 0.05); tone(110, 0.9, 'sine', 0.08, 0.1); },
-    verdict:  () => { [392, 523, 659].forEach((f, i) => tone(f, 0.4, 'triangle', 0.06, i * 0.12)); }
+    verdict:  () => { [392, 523, 659].forEach((f, i) => tone(f, 0.4, 'triangle', 0.06, i * 0.12)); },
+    rankup:   () => { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.22, 'triangle', 0.07, i * 0.11)); }
   };
 
   // 静音开关（右上角悬浮）
@@ -472,37 +467,164 @@ SOUND_JS = r"""
     else setTimeout(mount, 800);
   };
   mount();
+
+  // ===== 侦探档案：警衔 / 章节 / 难度解锁（localStorage） =====
+  const PKEY = 'd7w_profile_v1';
+  const RANKS = [[0, '见习侦探'], [100, '三级探员'], [250, '二级探员'], [450, '一级探员'], [700, '高级探员'], [1000, '首席侦探']];
+  const CASE_KEYS = ['clock', 'letter'];
+  const CASE_NAMES = {'clock': '第一章', 'letter': '第二章'};
+  const GAINS = {'S': 100, 'A': 70, 'B': 40, 'LOSE': 10, 'TIMEUP': 10};
+  const loadProf = () => { try { return JSON.parse(localStorage.getItem(PKEY)) || {xp: 0, wins: 0, best: {}, hardBest: {}}; } catch (e) { return {xp: 0, wins: 0, best: {}, hardBest: {}}; } };
+  const saveProf = (p) => { try { localStorage.setItem(PKEY, JSON.stringify(p)); } catch (e) {} };
+  const tierOf = (xp) => { let t = 0; RANKS.forEach(([th], i) => { if (xp >= th) t = i; }); return t; };
+  const rankName = (t) => RANKS[t][1];
+  const nextTh = (t) => (t + 1 < RANKS.length ? RANKS[t + 1][0] : RANKS[RANKS.length - 1][0]);
+
+  function parseRating(txt) {
+    txt = txt || '';
+    if (txt.indexOf('S 级') >= 0) return 'S';
+    if (txt.indexOf('A 级') >= 0) return 'A';
+    if (txt.indexOf('险胜') >= 0) return 'B';
+    if (txt.indexOf('冤案') >= 0) return 'LOSE';
+    if (txt.indexOf('时间耗尽') >= 0) return 'TIMEUP';
+    return null;
+  }
+
+  function currentCaseKey() {
+    const inp = document.querySelector('.case-picker input:checked');
+    const v = inp ? inp.value : '';
+    for (const k of CASE_KEYS) { if (v.indexOf(CASE_NAMES[k]) >= 0) return k; }
+    return 'clock';
+  }
+  function isHard() {
+    const inp = document.querySelector('.diff-picker input:checked');
+    return !!inp && inp.value === '困难';
+  }
+
+  function syncRankCode() {
+    const prof = loadProf();
+    const tier = tierOf(prof.xp);
+    const ch1 = prof.best.clock || '';
+    const ch2 = prof.best.letter || '';
+    const code = [tier, prof.wins || 0,
+                  (ch1 === 'S' || ch1 === 'A') ? 1 : 0,
+                  (ch2 === 'S' || ch2 === 'A') ? 1 : 0].join(':');
+    const inp = document.querySelector('.rank-code input, .rank-code textarea');
+    if (inp) {
+      inp.value = code;
+      inp.dispatchEvent(new Event('input', {bubbles: true}));
+      inp.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+  }
+
+  function renderRankBar() {
+    const prof = loadProf();
+    const t = tierOf(prof.xp);
+    const bar = document.querySelector('.rank-bar');
+    if (!bar) return;
+    const stars = CASE_KEYS.map(k => {
+      const nm = CASE_NAMES[k];
+      const r = prof.best[k];
+      const hr = prof.hardBest[k];
+      return nm + ' ' + (r ? '⭐' + r : '🌑') + (hr ? ' ★' + hr : '');
+    }).join('　');
+    const lock = (prof.best.clock === 'S' || prof.best.clock === 'A');
+    bar.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;">' +
+      '<span style="border:1px solid rgba(212,169,78,.4);border-radius:999px;padding:4px 12px;background:rgba(212,169,78,.12);">🎖️ <b style="color:#ecd08a">' + rankName(t) + '</b></span>' +
+      '<span style="color:#c2cbdb;font-size:.9em;">声望 ' + prof.xp + ' / 下一级 ' + nextTh(t) + '</span>' +
+      '<span style="color:#c2cbdb;font-size:.9em;">' + stars + '</span>' +
+      (lock ? '<span style="color:#4cc38a;font-size:.9em;">第二章 ✓ ｜ 困难模式 ✓</span>'
+            : '<span style="color:#8b93a5;font-size:.9em;">🔒 第二章 / 困难模式：以 S/A 通关第一章解锁</span>') +
+      '</div>';
+    document.querySelectorAll('.case-picker label').forEach(lb => {
+      const inp = lb.querySelector('input');
+      if (inp && (inp.value || '').indexOf('第二章') >= 0) {
+        lb.style.opacity = lock ? 1 : 0.45;
+        lb.style.cursor = lock ? 'pointer' : 'not-allowed';
+      }
+    });
+    syncRankCode();
+  }
+
+  function registerVerdict() {
+    const vc = document.querySelector('.verdict-card');
+    const visible = vc && vc.getBoundingClientRect().height > 0;
+    if (!visible) { window._d7w_flag = false; return; }
+    if (window._d7w_flag) return;
+    window._d7w_flag = true;
+    const rating = parseRating((vc.querySelector('h2') || {}).innerText);
+    if (!rating) return;
+    const prof = loadProf();
+    prof.xp += GAINS[rating] || 10;
+    if (rating === 'S' || rating === 'A') prof.wins = (prof.wins || 0) + 1;
+    const ckey = currentCaseKey();
+    const store = isHard() ? prof.hardBest : prof.best;
+    const prev = store[ckey];
+    if (!prev || (GAINS[rating] || 0) >= (GAINS[prev] || 0)) store[ckey] = rating;
+    saveProf(prof);
+    sfx.verdict();
+    if (tierOf(prof.xp) > tierOf(prof.xp - (GAINS[rating] || 0))) setTimeout(() => sfx.rankup(), 500);
+    renderRankBar();
+  }
+  setInterval(registerVerdict, 1500);
+  renderRankBar();
+  setTimeout(() => {
+    if (tierOf(loadProf().xp) >= 2) {
+      const ap = document.querySelector('.rank-apply button');
+      if (ap) ap.click();
+    }
+  }, 1200);
 }
 """
 
-# 统一输出槽位：chat, clock, status, clue, verdict_grp, verdict_md, q_box, npc_dd
-OUT8 = None  # 在 Blocks 内定义后填充
+# 统一输出槽位（见 Blocks 内定义）
+OUT = None      # 9 项：常规刷新
+FULL = None     # 13 项：全量刷新（含案件/难度/状态/存档）
 
 
 def _msgs(text):
     return [{"role": "assistant", "content": text}]
 
 
-def do_restart():
-    state = engine.new_game()
-    greet = engine.switch(state, DEFAULT_NPC)
-    return (_msgs(greet), engine.clock_md(state), engine.status_card(state, DEFAULT_NPC),
-            engine.clue_board(state), gr.Group(visible=False), "", "",
-            NPC_LABELS[DEFAULT_NPC])
+def do_restart(case_label, diff_label, rank_code):
+    cid = CASE_LABEL_TO_ID.get(case_label, "clock")
+    diff_label = diff_label if diff_label in DIFF_LABELS else "普通"
+    difficulty = "hard" if diff_label == "困难" else "normal"
+    tier, wins_any, ch1_sa, ch2_sa = parse_rank(rank_code)
+
+    if difficulty == "hard" and wins_any < 1:
+        gr.Warning("🔒 困难模式需先以 S/A 评级通关任意一章")
+        difficulty = "normal"
+    if cid == "letter" and ch1_sa != 1:
+        gr.Warning("🔒 第二章需先以 S/A 评级通关第一章")
+        cid = "clock"
+        case_label = CASES["clock"]["case_label"]
+
+    st = engine.new_game(cid, difficulty, tier)
+    greet = engine.switch(st, st["cur"])
+    npc_l = npc_labels_for(cid)
+    ev_l = ev_labels_for(cid, difficulty)
+    return (_msgs(greet), engine.clock_md(st), engine.status_card(st, st["cur"]),
+            engine.clue_board(st), gr.Group(visible=False), gr.skip(), "",
+            gr.update(choices=list(npc_l.values()), value=npc_l[st["cur"]]),
+            gr.update(choices=ev_l, value=None),
+            gr.skip(), gr.skip(), st, gr.skip())
 
 
-def do_switch(label, chat_hist, state):
-    npc_id = ID_BY_LABEL.get(label, DEFAULT_NPC)
+def do_switch(label, chat, state):
+    npc_id = engine.CD(state)["default_npc"]
+    labels = npc_labels_for(state["case_id"])
+    npc_id = next((k for k, v in labels.items() if v == label), state["cur"])
     if state["ended"]:
-        return (chat_hist, engine.clock_md(state), engine.status_card(state, npc_id),
-                engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip())
+        return (chat, engine.clock_md(state), engine.status_card(state, state["cur"]),
+                engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
     greet = engine.switch(state, npc_id)
     return (_msgs(greet), engine.clock_md(state), engine.status_card(state, npc_id),
-            engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip())
+            engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
 
 
-def do_ask(question, chat_hist, state):
-    chat = list(chat_hist)
+def do_ask(question, chat, state):
+    chat = list(chat)
     q = (question or "").strip()
     clock = engine.clock_md(state)
     status = engine.status_card(state, state["cur"])
@@ -510,11 +632,12 @@ def do_ask(question, chat_hist, state):
     grp, md = gr.skip(), gr.skip()
     if state["ended"]:
         return (chat, clock, status, clue, gr.Group(visible=True),
-                engine.end_markdown(state), q, gr.skip())
+                engine.end_markdown(state), q, gr.skip(), gr.skip())
     if q:
         res = engine.ask(state, state["cur"], q, LLM)
+        npc_name = engine.CD(state)["npcs"][state["cur"]]["name"]
         chat.append({"role": "user", "content": f"🧑‍✈️ 侦探：{q}"})
-        chat.append({"role": "assistant", "content": f"{NPCS[state['cur']]['name']}：{res['reply']}"})
+        chat.append({"role": "assistant", "content": f"{npc_name}：{res['reply']}"})
         if res["clue"]:
             chat.append({"role": "assistant", "content": "🔎 【关键线索解锁！查看右侧线索板】"})
         clock = engine.clock_md(state)
@@ -522,23 +645,24 @@ def do_ask(question, chat_hist, state):
         clue = engine.clue_board(state)
         if res["timeup"]:
             grp, md = gr.Group(visible=True), engine.end_markdown(state)
-    return (chat, clock, status, clue, grp, md, "", gr.skip())
+    return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip())
 
 
-def do_present(ev_label, chat_hist, state):
-    chat = list(chat_hist)
+def do_present(ev_label, chat, state):
+    chat = list(chat)
     clock = engine.clock_md(state)
     status = engine.status_card(state, state["cur"])
     clue = engine.clue_board(state)
     grp, md = gr.skip(), gr.skip()
     if state["ended"]:
         return (chat, clock, status, clue, gr.Group(visible=True),
-                engine.end_markdown(state), "", gr.skip())
-    npc = NPCS[state["cur"]]
-    ev_id = EV_ID_BY_LABEL.get(ev_label or "")
+                engine.end_markdown(state), "", gr.skip(), gr.skip())
+    ev_map = ev_map_for(state["case_id"], state.get("difficulty", "normal"))
+    npc = engine.CD(state)["npcs"][state["cur"]]
+    ev_id = ev_map.get(ev_label or "")
     if not ev_id:
         chat.append({"role": "assistant", "content": "（先在证物栏里选一件证物，再出示。）"})
-        return (chat, clock, status, clue, grp, md, "", gr.skip())
+        return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip())
     ev_name = ev_label.split(" — ")[0]
     chat.append({"role": "user", "content": f"🧑‍✈️ 侦探出示了证物：{ev_name}"})
     res = engine.present_evidence(state, state["cur"], ev_id)
@@ -550,22 +674,26 @@ def do_present(ev_label, chat_hist, state):
     clue = engine.clue_board(state)
     if res["timeup"]:
         grp, md = gr.Group(visible=True), engine.end_markdown(state)
-    return (chat, clock, status, clue, grp, md, "", gr.skip())
+    return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip())
 
 
-def do_accuse(choice, chat_hist, state):
-    chat = list(chat_hist)
+def do_accuse(choice, chat, state):
+    chat = list(chat)
     clock = engine.clock_md(state)
     status = engine.status_card(state, state["cur"])
     clue = engine.clue_board(state)
     if not choice:
         chat.append({"role": "assistant",
                      "content": "（请先从名单中选择一个名字，再按下结案指认。）"})
-        return (chat, clock, status, clue, gr.skip(), gr.skip(), gr.skip(), gr.skip())
+        return (chat, clock, status, clue, gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
     if not state["ended"]:
         engine.accuse(state, choice)
     return (chat, clock, status, clue, gr.Group(visible=True),
-            engine.end_markdown(state), gr.skip(), gr.skip())
+            engine.end_markdown(state), gr.skip(), gr.skip(), gr.skip())
+
+
+def do_quick_ask(question, chat, state):
+    return do_ask(question, chat, state)
 
 
 def do_export(state):
@@ -580,28 +708,47 @@ def do_load(code):
         st = engine.from_json(code or "")
     except ValueError as e:
         raise gr.Error(str(e))
-    cur = st.get("cur", DEFAULT_NPC)
+    cid = st["case_id"]
+    diff_label = "困难" if st.get("difficulty") == "hard" else "普通"
+    cur = st.get("cur") or CASES[cid]["default_npc"]
+    npc_l = npc_labels_for(cid)
+    ev_l = ev_labels_for(cid, st.get("difficulty", "normal"))
     greet = engine.switch(st, cur)
     ended = bool(st.get("ended", False))
     return (_msgs(greet), engine.clock_md(st), engine.status_card(st, cur),
             engine.clue_board(st), gr.Group(visible=ended),
             engine.end_markdown(st) if ended else gr.skip(),
-            "", NPC_LABELS.get(cur, NPC_LABELS[DEFAULT_NPC]),
+            "", gr.update(choices=list(npc_l.values()), value=npc_l[cur]),
+            gr.update(choices=ev_l, value=None),
+            gr.update(value=next(cl for cl in CASE_LABELS if CASE_LABEL_TO_ID[cl] == cid)),
+            gr.update(value=diff_label),
             st, "")
 
 
-with gr.Blocks(title=CASE_TITLE, css=CSS, js=SOUND_JS) as demo:
+with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
     gr.Markdown(
-        f"# 🕰️ 第七位证人\n"
-        f"*「AI 造游戏」参赛作品 · 把 AI 的记忆做成玩法的审讯推理游戏*\n\n{CASE_BRIEF}\n\n"
+        f"# 🕰️ {GAME_TITLE}\n"
+        f"*「AI 造游戏」参赛作品 · 把 AI 的记忆做成玩法的审讯推理游戏*\n\n"
+        f"**雾隐镇奇案集** —— 每一案，都藏着一位会撒谎、会记仇、会被打动的 AI。\n\n"
         f"<sub>🤖 当前 AI 引擎：**{LLM.name}**</sub>"
     )
+    rank_md = gr.Markdown(elem_classes=["rank-bar"])
+    rank_code = gr.Textbox(elem_classes=["rank-code"], show_label=False, container=False)
     state = gr.State(engine.new_game())
 
     with gr.Row():
+        case_dd = gr.Radio(choices=CASE_LABELS,
+                           value=CASE_LABELS[0],
+                           label="奇案集（切换案件将开启新局，进度可用存档码保存）",
+                           elem_classes=["case-picker"])
+        diff_radio = gr.Radio(choices=DIFF_LABELS, value="普通",
+                              label="难度（困难模式需 S/A 通关解锁）",
+                              elem_classes=["diff-picker"])
+
+    with gr.Row():
         with gr.Column(scale=7):
-            npc_dd = gr.Radio(choices=list(NPC_LABELS.values()),
-                              value=NPC_LABELS[DEFAULT_NPC],
+            npc_dd = gr.Radio(choices=list(npc_labels_for("clock").values()),
+                              value=npc_labels_for("clock")[CASES["clock"]["default_npc"]],
                               label="审讯对象（随时切换，不耗时）",
                               elem_classes=["npc-picker"])
             chat = gr.Chatbot(label="审讯记录", height=380, elem_classes=["chat-panel"])
@@ -609,17 +756,20 @@ with gr.Blocks(title=CASE_TITLE, css=CSS, js=SOUND_JS) as demo:
                                show_label=False, container=False, submit_btn=True,
                                elem_classes=["ask-box"])
             with gr.Row():
-                quick_btns = [gr.Button(qq, size="sm", elem_classes=["quick-btn"]) for qq in QUICK_QS]
+                quick_btns = [gr.Button(qq, size="sm", elem_classes=["quick-btn"])
+                              for qq in CASES["clock"]["quick_qs"]]
             with gr.Row():
-                ev_dd = gr.Dropdown(choices=EV_OPTIONS, label="证物（现场勘查所得）", value=None,
+                ev_dd = gr.Dropdown(choices=ev_labels_for("clock", "normal"),
+                                    label="证物（现场勘查所得）", value=None,
                                     elem_classes=["evidence-select"])
-                ev_btn = gr.Button("出示证据（-2 分钟）", variant="secondary", elem_classes=["evidence-btn"])
+                ev_btn = gr.Button("出示证据（-2 分钟）", variant="secondary",
+                                   elem_classes=["evidence-btn"])
         with gr.Column(scale=3):
             clock_md = gr.Markdown(elem_classes=["hud-clock"])
             status_md = gr.Markdown(elem_classes=["status-card"])
             with gr.Accordion("🔎 线索板", open=True):
                 clue_md = gr.Markdown(elem_classes=["clue-board"])
-            accuse_dd = gr.Dropdown(choices=ACCUSE_OPTIONS,
+            accuse_dd = gr.Dropdown(choices=CASES["clock"]["accuse_options"],
                                     label="指认真凶（一锤定音，慎重！）",
                                     elem_classes=["accuse-dd"])
             accuse_btn = gr.Button("🚨 结案指认", variant="stop", elem_classes=["accuse-btn"])
@@ -629,25 +779,29 @@ with gr.Blocks(title=CASE_TITLE, css=CSS, js=SOUND_JS) as demo:
                 with gr.Row():
                     save_btn = gr.Button("📤 生成存档码", size="sm", elem_classes=["quick-btn"])
                     load_btn = gr.Button("📥 读取并继续", size="sm", elem_classes=["quick-btn"])
+            apply_btn = gr.Button("应用警衔", visible=False, elem_classes=["rank-apply"])
 
     verdict_grp = gr.Group(visible=False, elem_classes=["verdict-card"])
     with verdict_grp:
         verdict_md = gr.Markdown()
         restart_btn = gr.Button("🔄 重新开始")
 
-    OUT8 = [chat, clock_md, status_md, clue_md, verdict_grp, verdict_md, q_box, npc_dd]
+    OUT = [chat, clock_md, status_md, clue_md, verdict_grp, verdict_md, q_box, npc_dd, ev_dd]
+    FULL = OUT + [case_dd, diff_radio, state, save_box]
 
-    demo.load(do_restart, None, OUT8)
-    npc_dd.change(do_switch, [npc_dd, chat, state], OUT8)
-    q_box.submit(do_ask, [q_box, chat, state], OUT8)
-    ev_btn.click(do_present, [ev_dd, chat, state], OUT8)
-    accuse_btn.click(do_accuse, [accuse_dd, chat, state], OUT8)
-    restart_btn.click(do_restart, None, OUT8)
+    demo.load(do_restart, [case_dd, diff_radio, rank_code], FULL)
+    apply_btn.click(do_restart, [case_dd, diff_radio, rank_code], FULL)
+    case_dd.change(do_restart, [case_dd, diff_radio, rank_code], FULL)
+    diff_radio.change(do_restart, [case_dd, diff_radio, rank_code], FULL)
+    npc_dd.change(do_switch, [npc_dd, chat, state], OUT)
+    q_box.submit(do_ask, [q_box, chat, state], OUT)
+    ev_btn.click(do_present, [ev_dd, chat, state], OUT)
+    accuse_btn.click(do_accuse, [accuse_dd, chat, state], OUT)
+    restart_btn.click(do_restart, [case_dd, diff_radio, rank_code], FULL)
     save_btn.click(do_export, [state], [save_box])
-    load_btn.click(do_load, [save_box], OUT8 + [state, save_box])
-    for b, qq in zip(quick_btns, QUICK_QS):
-        # 快捷提问：点击即直接发送该问题（不再只填充输入框）
-        b.click(lambda chat_hist, st, t=qq: do_ask(t, chat_hist, st), [chat, state], OUT8)
+    load_btn.click(do_load, [save_box], FULL)
+    for b, qq in zip(quick_btns, CASES["clock"]["quick_qs"]):
+        b.click(do_quick_ask, [b, chat, state], OUT)
 
 if __name__ == "__main__":
     # 创空间容器必须监听 0.0.0.0:7860；本地默认同配置，无副作用

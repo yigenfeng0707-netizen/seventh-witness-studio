@@ -18,12 +18,13 @@ import re
 import game_data as G
 
 
-def _match_topic(question):
+def _match_topic(question, rules=None):
+    rules = rules if rules is not None else G.TOPIC_RULES
     q = question.strip()
-    for topic, kws in G.TOPIC_RULES:
+    for topic, kws, _tone in rules:
         if any(kw in q for kw in kws):
-            return topic
-    return "default"
+            return topic, _tone
+    return "default", 2
 
 
 class MockLLM:
@@ -31,40 +32,34 @@ class MockLLM:
 
     name = "MockLLM（离线规则）"
 
-    def ask(self, npc, question, trust, memories=None, history=None):
-        topic = _match_topic(question)
+    def ask(self, npc, question, trust, memories=None, history=None,
+            rules=None, consensus=None):
+        topic, tc = _match_topic(question, rules)
         lines = npc["lines"]
-        if topic in ("alibi", "key", "theft", "shen"):
-            tc = -3
-            line = npc["pressured"][0] if (trust < 25) else lines.get(topic, lines["default"])
-        elif topic in ("wang", "su", "zhou", "luli"):
-            tc = -1
-            line = lines.get(topic, lines["default"])
-        elif topic in ("self", "clock"):
-            tc = 1
-            line = lines.get(topic, lines["default"])
-        else:
-            tc = 2
-            line = lines["default"]
+        line = lines.get(topic, lines["default"])
+        if tc < 0 and trust < 25:
+            line = npc["pressured"][0]
         return {"dialogue": line, "trust_change": tc, "clue": None, "emotion": None}
 
 
 class _OpenAIBase:
     """公共：system prompt 组装 + JSON 解析。"""
 
-    def _system(self, npc, trust, memories):
+    def _system(self, npc, trust, memories, consensus=None):
         mem_txt = "\n".join(f"- {m}" for m in memories[-8:]) or "- （尚未记住任何事）"
         facts = npc.get("facts") or []
         facts_txt = "\n".join(f"- {f}" for f in facts) or "- （无）"
+        bg = consensus or (
+            "背景共识：钟表匠沈师傅“上礼拜一出城去如意镇修大钟”（全镇都这么认为，你也这么说）。")
         return (
             "你正在扮演悬疑审讯游戏《第七位证人》中的角色，严格入戏。\n"
             f"角色：{npc['name']}，{npc['role']}。性格与说话方式：{npc['intro']}\n"
             f"你的秘密（绝不主动说出，除非玩家出示关键证据或逼问到你崩溃）：{npc['secret']}\n"
             f"你掌握的公共事实（回答必须与此一致，严禁编造与之矛盾的情节）：\n{facts_txt}\n"
             f"当前玩家信任度：{trust}/100。低于30时你戒备、回答简短回避；高于70时你愿意多说；"
-            "被问及行踪/钥匙/失窃等敏感话题时明显紧张。\n"
+            "被问及敏感话题时明显紧张。\n"
             f"你记住的玩家问过的事（回答时保持一致，不要自相矛盾）：\n{mem_txt}\n"
-            "背景共识：钟表匠沈师傅“上礼拜一出城去如意镇修大钟”（全镇都这么认为，你也这么说）。\n"
+            f"背景共识：{bg}\n"
             "要求：台词 1~3 句，符合民国小镇口吻与你的性格，不要跳出角色，"
             "不要出现 JSON 以外的说明文字。\n"
             '严格输出 JSON：{"dialogue": "台词", "emotion": "一个词", "trust_change": -5到5的整数}'
@@ -108,8 +103,8 @@ class OpenAICompatLLM(_OpenAIBase):
         if no_thinking:
             self._kw["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
 
-    def ask(self, npc, question, trust, memories=None, history=None):
-        msgs = [{"role": "system", "content": self._system(npc, trust, memories or [])}]
+    def ask(self, npc, question, trust, memories=None, history=None, rules=None, consensus=None):
+        msgs = [{"role": "system", "content": self._system(npc, trust, memories or [], consensus)}]
         for h in (history or [])[-6:]:
             msgs.append({"role": h["role"], "content": h["content"]})
         msgs.append({"role": "user", "content": f"玩家（侦探）问：{question}"})
@@ -140,8 +135,8 @@ class ModelScopeLLM(_OpenAIBase):
                                              "Qwen/Qwen3.8-Flash-Next")
         self.name = f"ModelScopeAPI（{self.model}）"
 
-    def ask(self, npc, question, trust, memories=None, history=None):
-        msgs = [{"role": "system", "content": self._system(npc, trust, memories or [])}]
+    def ask(self, npc, question, trust, memories=None, history=None, rules=None, consensus=None):
+        msgs = [{"role": "system", "content": self._system(npc, trust, memories or [], consensus)}]
         for h in (history or [])[-6:]:
             msgs.append({"role": h["role"], "content": h["content"]})
         msgs.append({"role": "user", "content": f"玩家（侦探）问：{question}"})
@@ -176,11 +171,11 @@ class HybridLLM:
         self.fallback = MockLLM()
         self.name = " → ".join(c.name for c in chain) + " → 离线兜底"
 
-    def ask(self, npc, question, trust, memories=None, history=None):
+    def ask(self, npc, question, trust, memories=None, history=None, rules=None, consensus=None):
         last_err = None
         for client in self.chain:
             try:
-                data = client.ask(npc, question, trust, memories, history)
+                data = client.ask(npc, question, trust, memories, history, rules, consensus)
                 dlg = data.get("dialogue") or ""
                 if dlg and not self._looks_like_leak(dlg):
                     return data
@@ -190,7 +185,7 @@ class HybridLLM:
                 last_err = e
                 print(f"[HybridLLM] {client.name} 失败：{type(e).__name__}: {str(e)[:100]}")
         print(f"[HybridLLM] 全链失败，回退离线：{last_err}")
-        return self.fallback.ask(npc, question, trust, memories, history)
+        return self.fallback.ask(npc, question, trust, memories, history, rules, consensus)
 
 
 def _env(*names):
