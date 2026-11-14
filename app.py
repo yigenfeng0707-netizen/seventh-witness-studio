@@ -411,6 +411,21 @@ body, gradio-app, .gradio-container {
 .gradio-container ::-webkit-scrollbar-thumb { background: rgba(212, 169, 78, 0.3); border-radius: 6px; }
 .gradio-container ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
 
+/* 可访问性：键盘焦点 + 减少动效 */
+.gradio-container button:focus-visible,
+.gradio-container input:focus-visible,
+.gradio-container textarea:focus-visible {
+  outline: 2px solid var(--brass-hi) !important;
+  outline-offset: 2px !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
 /* 手机端 */
 @media (max-width: 640px) {
   .gradio-container { padding: 0 6px !important; }
@@ -463,8 +478,15 @@ SOUND_JS = r"""
   const btn = document.createElement('button');
   btn.textContent = '🔊';
   btn.title = '游戏音效开关';
+  btn.setAttribute('aria-label', '游戏音效开关');
+  btn.setAttribute('aria-pressed', 'false');
   btn.style.cssText = 'position:fixed;top:8px;right:8px;z-index:9999;background:rgba(16,23,37,.92);border:1px solid rgba(212,169,78,.4);color:#ecd08a;border-radius:50%;width:36px;height:36px;font-size:15px;cursor:pointer;';
-  btn.onclick = () => { muted = !muted; btn.textContent = muted ? '🔇' : '🔊'; if (!muted) sfx.click(); };
+  btn.onclick = () => {
+    muted = !muted;
+    btn.textContent = muted ? '🔇' : '🔊';
+    btn.setAttribute('aria-pressed', String(muted));
+    if (!muted) sfx.click();
+  };
   document.body.appendChild(btn);
 
   // 按钮点击音（事件委托，捕获阶段）
