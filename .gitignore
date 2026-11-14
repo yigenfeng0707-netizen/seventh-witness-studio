@@ -1,0 +1,5 @@
+.edge-profile/
+__pycache__/
+*.log
+*.webm
+.DS_Store
