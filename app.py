@@ -774,7 +774,7 @@ def do_load(code):
 
 
 def _card_font(size):
-    """成绩卡字体：仓库内置 Noto Sans SC 优先，保证 Linux 容器中文可渲染。"""
+    """成绩卡字体：容器内 Noto CJK 优先（Dockerfile 安装），Windows 字体兜底。"""
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(here, "assets", "fonts", "NotoSansSC-Regular.otf"),
