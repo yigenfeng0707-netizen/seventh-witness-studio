@@ -73,7 +73,7 @@
 - [ ] 小红书报名帖（11.14 转用户手动发布：发布包已备齐——Word 文案 报名材料/小红书配图/小红书发布文案.docx + 5 图 + 视频帖文案；⚠️ 教训：CDP 自动化发布链路被风控软拦截（旧号发布受限、新号上传登记静默卡死），小红书类强风控平台发布动作必须纯人工，材料准备/文案校验可以自动化）
       指定话题：#AI无限开发者创作大赛 #AI造游戏 #盛趣游戏 #赞奇科技XSUPERZONE #华硕AI智能体电脑
       并 @魔搭ModelScope社区 @Qoder；帖子保持公开；报名通过得 500 Qoder Credits + 1,000 魔粒值
-- [x] 官网表单提交帖子链接（11.14 ✅ 已报名·待审核；参赛者冯亦根，社媒链接=小红书帖 https://www.xiaohongshu.com/explore/6af80965000000002a026c8c ；官网 modelscope.cn/active/AIstudio ；⚠️ Qoder 邮箱若填错可在"修改报名信息"更正，Credits 发至该邮箱）
+- [x] 官网表单提交帖子链接（11.14 ✅ 已报名·待审核；参赛者冯亦根，社媒链接=小红书帖 https://www.xiaohongshu.com/explore/6af80965000000002a026c8c ；官网 modelscope.cn/active/AIstudio ；（Qoder 邮箱确认：QQ邮箱别名 与 QQ邮箱别名 为同一邮箱别名，Credits 不会发丢））
       报名截止 **12.01 12:00**（已提前完成）
 - [x] 创作手记发布（11.14 ✅ https://modelscope.cn/posts/438364 ，专题 AI+赛事，含 58s 视频+4 图+关联创空间；正文精简 998 字+官方话题；发布遇 WAF 分类门，POST 需带 ?X-Request-Context=rctx_a3f90b7e2d41c8f6 绕过）
       完整提交得 1,000 Qoder Credits + 2,000 魔粒值
