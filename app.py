@@ -608,12 +608,7 @@ def do_restart(case_label, diff_label, rank_code):
             engine.clue_board(st), gr.Group(visible=False), gr.skip(), "",
             gr.update(choices=list(npc_l.values()), value=npc_l[st["cur"]]),
             gr.update(choices=ev_l, value=None),
-            avatar_of(cid, st["cur"]),
             gr.skip(), gr.skip(), st, gr.skip())
-
-
-def avatar_of(case_id, npc_id):
-    return os.path.abspath(os.path.join("assets", "avatars", f"{npc_id}.png"))
 
 
 def do_switch(label, chat, state):
@@ -622,12 +617,10 @@ def do_switch(label, chat, state):
     npc_id = next((k for k, v in labels.items() if v == label), state["cur"])
     if state["ended"]:
         return (chat, engine.clock_md(state), engine.status_card(state, state["cur"]),
-                engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(),
-                avatar_of(state["case_id"], npc_id))
+                engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
     greet = engine.switch(state, npc_id)
     return (_msgs(greet), engine.clock_md(state), engine.status_card(state, npc_id),
-            engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(),
-            avatar_of(state["case_id"], npc_id))
+            engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
 
 
 def do_ask(question, chat, state):
@@ -727,7 +720,6 @@ def do_load(code):
             engine.end_markdown(st) if ended else gr.skip(),
             "", gr.update(choices=list(npc_l.values()), value=npc_l[cur]),
             gr.update(choices=ev_l, value=None),
-            avatar_of(cid, cur),
             gr.update(value=next(cl for cl in CASE_LABELS if CASE_LABEL_TO_ID[cl] == cid)),
             gr.update(value=diff_label),
             st, "")
@@ -815,9 +807,6 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
                                    elem_classes=["evidence-btn"])
         with gr.Column(scale=3):
             clock_md = gr.Markdown(elem_classes=["hud-clock"])
-            avatar_img = gr.Image(value=os.path.abspath(os.path.join("assets", "avatars", "wang.png")), interactive=False,
-                                  show_label=False, elem_classes=["avatar-card"],
-                                  height=260, container=False)
             status_md = gr.Markdown(elem_classes=["status-card"])
             with gr.Accordion("🔎 线索板", open=True):
                 clue_md = gr.Markdown(elem_classes=["clue-board"])
@@ -841,8 +830,7 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
                             elem_classes=["card-img"])
         restart_btn = gr.Button("🔄 重新开始")
 
-    OUT = [chat, clock_md, status_md, clue_md, verdict_grp, verdict_md, q_box, npc_dd, ev_dd,
-           avatar_img]
+    OUT = [chat, clock_md, status_md, clue_md, verdict_grp, verdict_md, q_box, npc_dd, ev_dd]
     FULL = OUT + [case_dd, diff_radio, state, save_box]
 
     demo.load(do_restart, [case_dd, diff_radio, rank_code], FULL)
