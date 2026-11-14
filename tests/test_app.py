@@ -51,6 +51,12 @@ class TestContracts(unittest.TestCase):
         self.assertEqual(len(app.do_switch("🍵 苏眉（酒馆老板娘）", [], st)), 9)
         self.assertEqual(len(app.do_accuse("🔨 王大锤（铁匠）", [], st)), 10)
 
+    def test_switch_same_npc_keeps_chat(self):
+        # 切案/读档时程序化更新 npc_dd 不应把聊天区覆盖成问候
+        st = engine.new_game()
+        out = app.do_switch("🔨 王大锤（铁匠）", ["卷宗"], st)
+        self.assertNotIsInstance(out[0], list)
+
     def test_card_requires_verdict(self):
         st = engine.new_game()
         out = app.do_card(st, "0:0:0:0")

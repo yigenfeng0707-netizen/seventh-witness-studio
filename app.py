@@ -413,8 +413,20 @@ body, gradio-app, .gradio-container {
 
 /* 手机端 */
 @media (max-width: 640px) {
-  .chat-panel { height: 300px !important; }
-  .gradio-container { padding: 0 4px !important; }
+  .gradio-container { padding: 0 6px !important; }
+  .gradio-container h1 { font-size: 26px !important; padding-bottom: 8px !important; }
+  .hero p { display: none !important; }   /* 手机端隐藏长副标题/引擎行，优先露出聊天区 */
+  .rank-bar { font-size: 12px !important; }
+  .rank-bar > div { padding: 8px 10px !important; gap: 6px !important; }
+  .row:has(.case-picker) { flex-direction: column !important; gap: 6px !important; }
+  .case-picker label, .diff-picker label, .npc-picker label {
+    font-size: 12px !important; padding: 6px 8px !important;
+    min-height: 36px !important; line-height: 1.35 !important;
+  }
+  .case-picker, .diff-picker { gap: 4px !important; }
+  .npc-picker { flex-wrap: nowrap !important; overflow-x: auto !important; padding-bottom: 4px; }
+  .npc-picker label { white-space: nowrap !important; }
+  .chat-panel { height: 320px !important; }
 }
 """
 
@@ -642,9 +654,13 @@ def do_restart(case_label, diff_label, rank_code):
 
 
 def do_switch(label, chat, state):
-    npc_id = engine.CD(state)["default_npc"]
     labels = npc_labels_for(state["case_id"])
     npc_id = next((k for k, v in labels.items() if v == label), state["cur"])
+    # 程序化更新 npc_dd（切案/读档）也会触发 change；此时 cur 已等于目标，
+    # 不能再把聊天区覆盖成一句问候，否则开局的“卷宗”会被冲掉。
+    if npc_id == state["cur"]:
+        return (gr.skip(), engine.clock_md(state), engine.status_card(state, state["cur"]),
+                engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
     if state["ended"]:
         return (chat, engine.clock_md(state), engine.status_card(state, state["cur"]),
                 engine.clue_board(state), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
@@ -853,7 +869,8 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
         f"*「AI 造游戏」参赛作品 · 把 AI 的记忆做成玩法的审讯推理游戏*\n\n"
         f"**雾隐镇奇案集** —— 每一案，都藏着一位会撒谎、会记仇、会被打动的 AI。\n\n"
         f"<sub>🤖 当前 AI 引擎：**{LLM.name}**"
-        f"{' · build ' + BUILD_ID if BUILD_ID else ''}</sub>"
+        f"{' · build ' + BUILD_ID if BUILD_ID else ''}</sub>",
+        elem_classes=["hero"],
     )
     rank_md = gr.Markdown(elem_classes=["rank-bar"])
     rank_code = gr.Textbox(elem_classes=["rank-code"], show_label=False, container=False)
