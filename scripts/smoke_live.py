@@ -5,6 +5,7 @@
 失败时以非 0 退出，避免“部署成功但线上不可玩”。
 """
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -13,6 +14,7 @@ import urllib.request
 ROOT = "https://gsym236998-seventh-witness.ms.show"
 BASE = ROOT + "/gradio_api"
 SESSION = "ci-smoke-%d" % int(time.time())
+EXPECTED = os.environ.get("GITHUB_SHA", "")[:12]
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131"
 HEADERS = {"Content-Type": "application/json", "User-Agent": UA}
 
@@ -23,18 +25,23 @@ def _req(url, data=None, timeout=60):
 
 
 def wait_ready(max_wait=900):
+    """等到新容器就绪：/config 里出现本次 commit 的 build 标记。"""
     start = time.time()
     last = None
     while time.time() - start < max_wait:
         try:
-            with _req(ROOT, timeout=20) as r:
-                if r.status == 200:
-                    print("[smoke] 容器就绪（%.0fs）" % (time.time() - start))
+            with _req(ROOT + "/config", timeout=20) as r:
+                cfg = r.read().decode("utf-8", "ignore")
+            if r.status == 200:
+                if not EXPECTED or EXPECTED in cfg:
+                    print("[smoke] 新容器就绪 build=%s（%.0fs）"
+                          % (EXPECTED or "dev", time.time() - start))
                     return
+                last = "旧版本仍在运行"
         except Exception as e:
             last = e
         time.sleep(15)
-    raise RuntimeError("容器 15 分钟内未就绪：%s" % last)
+    raise RuntimeError("新容器 15 分钟内未就绪：%s" % last)
 
 
 def _text(msg):

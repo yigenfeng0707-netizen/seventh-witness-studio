@@ -41,6 +41,19 @@ import gradio as gr
 from PIL import Image as PILImage, ImageDraw, ImageFont
 
 import npc_engine as engine
+
+
+def _build_id():
+    """部署标记：CI 在 VERSION 写入 commit SHA，供 smoke 判断新容器是否就绪。"""
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()[:12]
+    except Exception:
+        return ""
+
+
+BUILD_ID = _build_id()
 from game_data import CASES, GAME_TITLE, RANKS, XP_GAIN
 
 LLM = engine.G and __import__("llm_client").get_llm()
@@ -839,7 +852,8 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
         f"# 🕰️ {GAME_TITLE}\n"
         f"*「AI 造游戏」参赛作品 · 把 AI 的记忆做成玩法的审讯推理游戏*\n\n"
         f"**雾隐镇奇案集** —— 每一案，都藏着一位会撒谎、会记仇、会被打动的 AI。\n\n"
-        f"<sub>🤖 当前 AI 引擎：**{LLM.name}**</sub>"
+        f"<sub>🤖 当前 AI 引擎：**{LLM.name}**"
+        f"{' · build ' + BUILD_ID if BUILD_ID else ''}</sub>"
     )
     rank_md = gr.Markdown(elem_classes=["rank-bar"])
     rank_code = gr.Textbox(elem_classes=["rank-code"], show_label=False, container=False)
