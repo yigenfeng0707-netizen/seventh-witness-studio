@@ -340,6 +340,61 @@ body, gradio-app, .gradio-container {
 .gradio-container ::-webkit-scrollbar-thumb { background: rgba(212, 169, 78, 0.3); border-radius: 6px; }
 .gradio-container ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
 
+
+/* ================= 响应式：手机 / 平板 / 桌面 ================= */
+/* 平板竖屏与手机（≤900px）：双栏堆叠为单列，审讯流在上、HUD 在下 */
+@media (max-width: 900px) {
+  .gradio-container .row {
+    flex-wrap: wrap !important;
+  }
+  .gradio-container .row > [class*="column"], .gradio-container .row > div[class*="col"],
+  .gradio-container .row > .col, .gradio-container .row > div {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+  }
+  .gradio-container { padding: 0 10px !important; }
+  .gradio-container h1 { font-size: 1.5em !important; }
+
+  /* 人物卡：双列网格，触控目标加大 */
+  .npc-picker {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  .npc-picker label {
+    flex: 1 1 46% !important;
+    padding: 12px 10px !important;
+    font-size: 0.95em !important;
+    text-align: center;
+  }
+  .gradio-container button {
+    min-height: 44px !important;
+  }
+  .accuse-btn { font-size: 1.05em !important; }
+}
+
+/* 手机（≤640px）：进一步压缩 */
+@media (max-width: 640px) {
+  .chat-panel { height: 300px !important; }
+  .gradio-container h1 { font-size: 1.3em !important; letter-spacing: 0.03em; }
+  .hud-clock strong { font-size: 1.15em !important; }
+  .npc-picker label { flex: 1 1 100% !important; }
+  .verdict-card { padding: 16px 14px !important; }
+  .verdict-card h2 { font-size: 1.3em !important; }
+}
+
+/* 平板横屏 / 小桌面（901-1279px）：保持双栏，压缩留白 */
+@media (min-width: 901px) and (max-width: 1279px) {
+  .gradio-container { padding: 0 10px !important; }
+  .chat-panel { height: 340px !important; }
+}
+
+/* 大桌面（≥1600px）：放宽版心 */
+@media (min-width: 1600px) {
+  .gradio-container { max-width: 1400px !important; }
+}
+
 /* 手机端 */
 @media (max-width: 640px) {
   .chat-panel { height: 300px !important; }
