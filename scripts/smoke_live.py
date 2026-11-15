@@ -92,7 +92,9 @@ def main():
 
     out = call("do_confront", ["王大锤 × 苏眉 · 案发当晚", []])
     assert len(out) == 10, "do_confront 输出槽位异常：%d" % len(out)
-    assert out[8].get("choices") == ["王大锤", "苏眉"], "对质选项异常"
+    raw = out[8].get("choices") or []
+    flat = [c[0] if isinstance(c, (list, tuple)) else c for c in raw]
+    assert flat == ["王大锤", "苏眉"], "对质选项异常：%s" % flat
     out = call("do_resolve", ["王大锤", []])
     assert "谎言被揭穿" in _text(out[0][-1]), "对质结算失败"
     print("[smoke] 当面对质 OK")
