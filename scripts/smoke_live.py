@@ -78,7 +78,8 @@ def main():
     out = call("do_restart", ["第一章 · 自鸣钟机芯失窃案", "普通", ""])
     assert len(out) == 21, "do_restart 输出槽位异常：%d" % len(out)
     assert "卷宗" in _text(out[0][0]), "开局缺少卷宗"
-    print("[smoke] 第一章开局 / 卷宗 OK")
+    assert "data:image/jpeg;base64" in str(out[2]), "状态卡缺少立绘"
+    print("[smoke] 第一章开局 / 卷宗 / 立绘 OK")
 
     out = call("do_ask", ["案发当晚你在哪里？", []])
     assert any("侦探" in _text(m) for m in out[0]), "提问无回复"

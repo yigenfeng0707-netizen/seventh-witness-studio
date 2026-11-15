@@ -77,6 +77,12 @@ class TestContracts(unittest.TestCase):
         out = app.do_switch("🔨 王大锤（铁匠）", ["卷宗"], st)
         self.assertNotIsInstance(out[0], list)
 
+    def test_all_status_cards_have_avatars(self):
+        for cid, c in app.CASES.items():
+            st = engine.new_game(cid)
+            for nid in c["npcs"]:
+                self.assertIn("data:image/jpeg;base64", engine.status_card(st, nid), nid)
+
     def test_card_requires_verdict(self):
         st = engine.new_game()
         out = app.do_card(st, "0:0:0:0")

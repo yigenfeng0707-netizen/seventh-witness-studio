@@ -214,6 +214,32 @@ class TestChapter3(unittest.TestCase):
         self.assertEqual(st["clues"], [])
 
 
+class TestDataIntegrity(unittest.TestCase):
+    def test_all_cases_have_confrontations(self):
+        for cid, c in G.CASES.items():
+            self.assertTrue(c.get("confrontations"), cid)
+            for p in c["confrontations"]:
+                self.assertIn(p["a"], c["npcs"])
+                self.assertIn(p["b"], c["npcs"])
+                self.assertIn(p["liar"], (p["a"], p["b"]))
+                self.assertIn(p["clue"], c["key_clues"])
+
+    def test_all_cases_quick_questions(self):
+        for cid, c in G.CASES.items():
+            self.assertEqual(len(c["quick_qs"]), 4, cid)
+
+
+class TestChapter3Save(unittest.TestCase):
+    def test_roundtrip(self):
+        st = engine.new_game("final", "hard", 0)
+        st["clues"] = ["L9", "L10"]
+        st["confronted"] = ["final_conf_1"]
+        st2 = engine.from_json(engine.to_json(st))
+        self.assertEqual(st2["case_id"], "final")
+        self.assertEqual(st2["clues"], ["L9", "L10"])
+        self.assertEqual(st2["confronted"], ["final_conf_1"])
+
+
 class TestSave(unittest.TestCase):
     def test_roundtrip(self):
         st = engine.new_game("letter", "hard", 0)
