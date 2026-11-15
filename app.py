@@ -487,6 +487,8 @@ body, gradio-app, .gradio-container {
   .npc-picker { flex-wrap: nowrap !important; overflow-x: auto !important; padding-bottom: 4px; }
   .npc-picker label { white-space: nowrap !important; }
   .chat-panel { height: 320px !important; }
+  /* 原 HUD 隐藏，改由 JS 在聊天区上方插入 sticky HUD，避免遮住台词 */
+  .hud-clock { display: none !important; }
 }
 """
 
@@ -534,10 +536,57 @@ SOUND_JS = r"""
   };
   document.body.appendChild(btn);
 
+  // 朗读开关（Web Speech API，浏览器本地合成，无服务端成本）
+  let voiceOn = false;
+  const VOICE = {
+    '王大锤': {pitch: 0.70, rate: 0.95}, '苏眉':   {pitch: 1.25, rate: 1.02},
+    '陆离':   {pitch: 0.90, rate: 0.95}, '老周':   {pitch: 0.75, rate: 0.85},
+    '贾万通': {pitch: 1.00, rate: 0.90}, '小顺子': {pitch: 1.30, rate: 1.05},
+    '柳文清': {pitch: 1.05, rate: 0.95}, '阿飞':   {pitch: 1.20, rate: 1.05},
+    '严崇山': {pitch: 0.65, rate: 0.85}, '温书仪': {pitch: 1.20, rate: 0.95},
+    '何老栓': {pitch: 0.70, rate: 0.80}, '阿蘅':   {pitch: 1.35, rate: 0.90}
+  };
+  const voiceBtn = document.createElement('button');
+  voiceBtn.textContent = '🗣️';
+  voiceBtn.title = 'NPC 台词朗读开关';
+  voiceBtn.setAttribute('aria-label', 'NPC 台词朗读开关');
+  voiceBtn.setAttribute('aria-pressed', 'false');
+  voiceBtn.style.cssText = 'position:fixed;top:52px;right:8px;z-index:9999;background:rgba(16,23,37,.92);border:1px solid rgba(212,169,78,.4);color:#ecd08a;border-radius:50%;width:36px;height:36px;font-size:15px;cursor:pointer;';
+  voiceBtn.onclick = () => {
+    voiceOn = !voiceOn;
+    voiceBtn.textContent = voiceOn ? '🗣️' : '🔇';
+    voiceBtn.setAttribute('aria-pressed', String(voiceOn));
+    if (voiceOn && window.speechSynthesis) {
+      const u = new SpeechSynthesisUtterance('朗读已开启。');
+      u.lang = 'zh-CN';
+      speechSynthesis.speak(u);
+    } else if (window.speechSynthesis) {
+      speechSynthesis.cancel();
+    }
+  };
+  document.body.appendChild(voiceBtn);
+
+  function speakLine(txt) {
+    if (!voiceOn || !window.speechSynthesis) return;
+    const names = Object.keys(VOICE);
+    const nm = names.find(n => txt.indexOf(n + '：') === 0);
+    if (!nm) return;
+    const body = txt.slice(nm.length + 1).split('（')[0].trim();
+    if (!body) return;
+    const u = new SpeechSynthesisUtterance(body.slice(0, 140));
+    u.lang = 'zh-CN';
+    u.pitch = VOICE[nm].pitch;
+    u.rate = VOICE[nm].rate;
+    const zh = (speechSynthesis.getVoices() || []).find(v => v.lang && v.lang.indexOf('zh') === 0);
+    if (zh) u.voice = zh;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }
+
   // 按钮点击音（事件委托，捕获阶段）
   document.addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (!b || b === btn) return;
+    if (!b || b === btn || b === voiceBtn) return;
     const t = (b.innerText || '').replace(/\s+/g, '');
     if (t.includes('结案指认')) { sfx.accuse(); setTimeout(() => sfx.verdict(), 700); }
     else if (t.includes('出示证据')) sfx.evidence();
@@ -557,7 +606,7 @@ SOUND_JS = r"""
       const txt = (last.innerText || '');
       if (txt.includes('关键线索解锁')) sfx.clue();
       else if (txt.includes('侦探：')) sfx.send();
-      else if (txt.trim()) sfx.reply();
+      else if (txt.trim()) { sfx.reply(); speakLine(txt.trim()); }
     }
     prevCount = key;
   };
@@ -681,6 +730,31 @@ SOUND_JS = r"""
       if (ap) ap.click();
     }
   }, 1200);
+
+  // 手机端 sticky HUD：镜像左侧时间/线索，贴在聊天区上方，不遮挡台词
+  function mountMobileHud() {
+    if (window.innerWidth > 640 || document.querySelector('.mobile-hud-js')) return;
+    const chat = document.querySelector('.chat-panel');
+    if (!chat || !chat.parentElement) return;
+    const hud = document.createElement('div');
+    hud.className = 'mobile-hud-js';
+    hud.style.cssText = 'position:sticky;top:0;z-index:60;margin:0 0 6px;padding:4px 10px;' +
+      'border-radius:999px;background:rgba(12,18,32,.97);border:1px solid rgba(212,169,78,.45);' +
+      'color:#f2ecdc;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;' +
+      'text-overflow:ellipsis;box-shadow:0 4px 14px rgba(0,0,0,.5);';
+    chat.parentElement.insertBefore(hud, chat);
+    const sync = () => {
+      const src = document.querySelector('.hud-clock');
+      if (!src) return;
+      const next = (src.textContent || '').replace(/\s+/g, ' ').trim();
+      if (next && hud.textContent !== next) hud.textContent = next;
+    };
+    new MutationObserver(sync).observe(document.body, {subtree: true, childList: true, characterData: true});
+    setInterval(sync, 1200);
+    sync();
+  }
+  setTimeout(mountMobileHud, 1600);
+  window.addEventListener('resize', () => setTimeout(mountMobileHud, 400));
 }
 """
 

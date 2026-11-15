@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """NPC 引擎 v2：多案件感知 + 信任阈值规则层 + 存档分享码"""
 
+import base64
+import os
+
 import game_data as G
 from game_data import (CASES, HARD_MINUTES, HARD_TRUST_PENALTY,
                        COST_TALK, COST_EVIDENCE, START_MINUTES)
@@ -321,6 +324,27 @@ def clock_md(state):
             f"　｜　🔎 **线索 {len(state['clues'])}/{len(c['key_clues'])}**{warn}{hint}")
 
 
+_AVATAR_CACHE = {}
+
+
+def _avatar_img(npc_id):
+    """立绘缩略图走 data URI，避免 iframe/静态路径 404。"""
+    if npc_id in _AVATAR_CACHE:
+        return _AVATAR_CACHE[npc_id]
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "assets", "avatars_small", f"{npc_id}.jpg")
+    try:
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        html = (f'<img src="data:image/jpeg;base64,{b64}" alt="{npc_id}" '
+                'style="width:84px;height:105px;object-fit:cover;border-radius:8px;'
+                'border:1px solid rgba(212,169,78,.45);float:right;margin:0 0 8px 12px;">')
+    except Exception:
+        html = ""
+    _AVATAR_CACHE[npc_id] = html
+    return html
+
+
 def status_card(state, npc_id):
     c = CD(state)
     npc, st = c["npcs"][npc_id], state["npc"][npc_id]
@@ -331,6 +355,7 @@ def status_card(state, npc_id):
     secret_line = (f"- 🔓 {npc['secret']}" if st["confessed"]
                    else "- 🔒 ？？？（出示有效证据可撬开）")
     return (
+        _avatar_img(npc_id) + "\n\n" +
         f"### {npc['emoji']} {npc['name']} · {npc['role']}\n"
         f"> {npc['intro']}\n\n"
         f"**情绪**：{st['emotion']}　**信任度**：{bar} {st['trust']}\n\n"

@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r re
 
 COPY app.py game_data.py llm_client.py npc_engine.py ./
 COPY VERSION ./VERSION
+COPY assets/avatars_small ./assets/avatars_small
 
 EXPOSE 7860
 ENTRYPOINT ["python", "app.py"]
