@@ -59,7 +59,7 @@ from game_data import CASES, GAME_TITLE, RANKS, XP_GAIN
 LLM = engine.G and __import__("llm_client").get_llm()
 print(f"[llm] 使用引擎：{LLM.name}")
 
-CASE_ORDER = ["clock", "letter"]
+CASE_ORDER = ["clock", "letter", "final"]
 CASE_LABELS = [CASES[cid]["case_label"] for cid in CASE_ORDER]
 CASE_LABEL_TO_ID = {CASES[cid]["case_label"]: cid for cid in CASE_ORDER}
 DIFF_LABELS = ["普通", "困难"]
@@ -572,8 +572,8 @@ SOUND_JS = r"""
   // ===== 侦探档案：警衔 / 章节 / 难度解锁（localStorage） =====
   const PKEY = 'd7w_profile_v1';
   const RANKS = [[0, '见习侦探'], [100, '三级探员'], [250, '二级探员'], [450, '一级探员'], [700, '高级探员'], [1000, '首席侦探']];
-  const CASE_KEYS = ['clock', 'letter'];
-  const CASE_NAMES = {'clock': '第一章', 'letter': '第二章'};
+  const CASE_KEYS = ['clock', 'letter', 'final'];
+  const CASE_NAMES = {'clock': '第一章', 'letter': '第二章', 'final': '终章'};
   const GAINS = {'S': 100, 'A': 70, 'B': 40, 'LOSE': 10, 'TIMEUP': 10};
   const loadProf = () => { try { return JSON.parse(localStorage.getItem(PKEY)) || {xp: 0, wins: 0, best: {}, hardBest: {}}; } catch (e) { return {xp: 0, wins: 0, best: {}, hardBest: {}}; } };
   const saveProf = (p) => { try { localStorage.setItem(PKEY, JSON.stringify(p)); } catch (e) {} };
@@ -629,20 +629,26 @@ SOUND_JS = r"""
       const hr = prof.hardBest[k];
       return nm + ' ' + (r ? '⭐' + r : '🌑') + (hr ? ' ★' + hr : '');
     }).join('　');
-    const lock = (prof.best.clock === 'S' || prof.best.clock === 'A');
+    const ch1ok = (prof.best.clock === 'S' || prof.best.clock === 'A');
+    const ch2ok = (prof.best.letter === 'S' || prof.best.letter === 'A');
+    const lockTag = (ch1ok ? '第二章 ✓' : '🔒 第二章') + ' ｜ ' +
+                    (ch2ok ? '终章 ✓' : '🔒 终章') + ' ｜ ' +
+                    (ch1ok ? '困难模式 ✓' : '🔒 困难模式');
     bar.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;">' +
       '<span style="border:1px solid rgba(212,169,78,.4);border-radius:999px;padding:4px 12px;background:rgba(212,169,78,.12);">🎖️ <b style="color:#ecd08a">' + rankName(t) + '</b></span>' +
       '<span style="color:#c2cbdb;font-size:.9em;">声望 ' + prof.xp + ' / 下一级 ' + nextTh(t) + '</span>' +
       '<span style="color:#c2cbdb;font-size:.9em;">' + stars + '</span>' +
-      (lock ? '<span style="color:#4cc38a;font-size:.9em;">第二章 ✓ ｜ 困难模式 ✓</span>'
-            : '<span style="color:#8b93a5;font-size:.9em;">🔒 第二章 / 困难模式：以 S/A 通关第一章解锁</span>') +
+      '<span style="color:' + (ch1ok ? '#4cc38a' : '#8b93a5') + ';font-size:.9em;">' + lockTag + '</span>' +
       '</div>';
     document.querySelectorAll('.case-picker label').forEach(lb => {
       const inp = lb.querySelector('input');
-      if (inp && (inp.value || '').indexOf('第二章') >= 0) {
-        lb.style.opacity = lock ? 1 : 0.45;
-        lb.style.cursor = lock ? 'pointer' : 'not-allowed';
-      }
+      if (!inp) return;
+      const v = inp.value || '';
+      let ok = true;
+      if (v.indexOf('第二章') >= 0) ok = ch1ok;
+      else if (v.indexOf('终章') >= 0) ok = ch2ok;
+      lb.style.opacity = ok ? 1 : 0.45;
+      lb.style.cursor = ok ? 'pointer' : 'not-allowed';
     });
     syncRankCode();
   }
@@ -699,6 +705,10 @@ def do_restart(case_label, diff_label, rank_code):
         diff_label = "普通"
     if cid == "letter" and ch1_sa != 1:
         gr.Warning("🔒 第二章需先以 S/A 评级通关第一章")
+        cid = "clock"
+        case_label = CASES["clock"]["case_label"]
+    if cid == "final" and ch2_sa != 1:
+        gr.Warning("🔒 终章需先以 S/A 评级通关第二章")
         cid = "clock"
         case_label = CASES["clock"]["case_label"]
 

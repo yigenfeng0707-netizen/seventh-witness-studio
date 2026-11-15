@@ -182,6 +182,38 @@ class TestChapter2S(unittest.TestCase):
         self.assertEqual(st["verdict"], "WIN_S")
 
 
+class TestChapter3(unittest.TestCase):
+    def test_s_path(self):
+        st = engine.new_game("final", "normal", 0)
+        plan = [("wen", "kerosene"), ("aheng", "drawing"),
+                ("he", "autopsy"), ("yan", "key")]
+        for npc, ev in plan:
+            r = engine.present_evidence(st, npc, ev)
+            self.assertIsNotNone(r["clue"])
+        self.assertEqual(len(st["clues"]), 4)
+        engine.accuse(st, "🏛️ 严崇山（警局局长）")
+        self.assertEqual(st["verdict"], "WIN_S")
+
+    def test_confrontations(self):
+        st = engine.new_game("final", "normal", 0)
+        llm = L.MockLLM()
+        for pid, liar in [("final_conf_1", "严崇山"), ("final_conf_2", "严崇山")]:
+            r = engine.start_confrontation(st, pid, llm)
+            self.assertTrue(r["started"])
+            rr = engine.resolve_confrontation(st, liar)
+            self.assertTrue(rr["correct"])
+        self.assertIn("L9", st["clues"])
+        self.assertIn("L11", st["clues"])
+
+    def test_wrong_liar(self):
+        st = engine.new_game("final", "normal", 0)
+        llm = L.MockLLM()
+        engine.start_confrontation(st, "final_conf_1", llm)
+        rr = engine.resolve_confrontation(st, "温书仪")
+        self.assertFalse(rr["correct"])
+        self.assertEqual(st["clues"], [])
+
+
 class TestSave(unittest.TestCase):
     def test_roundtrip(self):
         st = engine.new_game("letter", "hard", 0)

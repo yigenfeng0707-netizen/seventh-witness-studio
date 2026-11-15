@@ -112,6 +112,16 @@ def main():
     assert out[0].get("value", {}).get("url"), "成绩卡无图片 URL"
     print("[smoke] 成绩卡生成 OK")
 
+    out = call("do_restart", ["终章 · 第七位证人", "普通", "0:1:1:1"])
+    assert "终章" in out[9]["value"], "终章未切换"
+    assert any("严崇山" in str(c) for c in (out[13].get("choices") or [])), "终章指认名单异常"
+    assert len(out[19].get("choices") or []) == 2, "终章对质点数量异常"
+    out = call("do_confront", ["严崇山 × 温书仪 · 煤油壶从哪来", []])
+    assert len(out) == 10, "终章对质输出槽位异常"
+    out = call("do_resolve", ["严崇山", []])
+    assert "谎言被揭穿" in _text(out[0][-1]), "终章对质结算失败"
+    print("[smoke] 终章/对质 OK")
+
     print("[smoke] 全部通过")
 
 

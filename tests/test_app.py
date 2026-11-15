@@ -32,6 +32,15 @@ class TestContracts(unittest.TestCase):
         self.assertEqual(out[14]["value"], "忏悔信里写了什么？")
         self.assertEqual(out[17]["value"], "谁最可能截走它？")
 
+    def test_final_chapter_gate_and_choices(self):
+        locked = app.do_restart("终章 · 第七位证人", "普通", "0:1:1:0")
+        self.assertEqual(locked[9]["value"], "第一章 · 自鸣钟机芯失窃案")
+        out = app.do_restart("终章 · 第七位证人", "普通", "0:1:1:1")
+        self.assertEqual(out[9]["value"], "终章 · 第七位证人")
+        self.assertIn("🏛️ 严崇山（警局局长）", out[13]["choices"])
+        self.assertEqual(out[14]["value"], "火灾那晚你在哪里？")
+        self.assertEqual(len(out[19]["choices"]), 2)  # 两个对质点
+
     def test_restart_intro_contains_brief(self):
         out = app.do_restart("第一章 · 自鸣钟机芯失窃案", "普通", "0:0:0:0")
         self.assertIn("卷宗", out[0][0]["content"])
