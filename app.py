@@ -86,6 +86,14 @@ def ev_map_for(case_id, difficulty):
     return {f"{e['name']} — {e['desc']}": e["id"] for e in evs}
 
 
+def confront_labels_for(case_id):
+    return [p["label"] for p in CASES[case_id].get("confrontations", [])]
+
+
+def confront_map_for(case_id):
+    return {p["label"]: p["id"] for p in CASES[case_id].get("confrontations", [])}
+
+
 def quick_updates(case_id):
     """4 个快捷问题按钮随案件切换；不足 4 个时隐藏多余按钮。"""
     qs = CASES[case_id]["quick_qs"]
@@ -264,16 +272,16 @@ body, gradio-app, .gradio-container {
   box-shadow: 0 0 0 1px var(--brass), 0 0 18px rgba(212, 169, 78, 0.18) !important;
 }
 .gradio-container input::placeholder, .gradio-container textarea::placeholder { color: #6b7689 !important; }
-.evidence-select, .accuse-dd {
+.evidence-select, .accuse-dd, .confront-dd {
   background: #0a0f1c !important;
   border-radius: 10px !important;
 }
 /* 下拉框本体：Gradio 内层 .wrap 是白底，会把浅色文字吞掉 */
-.evidence-select .wrap, .accuse-dd .wrap {
+.evidence-select .wrap, .accuse-dd .wrap, .confront-dd .wrap {
   background: #0a0f1c !important;
   border-color: var(--line-brass) !important;
 }
-.evidence-select input, .accuse-dd input {
+.evidence-select input, .accuse-dd input, .confront-dd input {
   color: var(--ink) !important;
   background: transparent !important;
   -webkit-text-fill-color: var(--ink) !important;
@@ -709,7 +717,9 @@ def do_restart(case_label, diff_label, rank_code):
             gr.update(choices=ev_l, value=None),
             gr.update(value=case_label), gr.update(value=diff_label), st, gr.skip(),
             gr.update(choices=c["accuse_options"], value=None),
-            *quick_updates(cid), gr.update(value=None, visible=False))
+            *quick_updates(cid), gr.update(value=None, visible=False),
+            gr.update(choices=confront_labels_for(cid), value=None),
+            gr.update(visible=False))
 
 
 def do_switch(label, chat, state):
@@ -800,6 +810,65 @@ def do_present(ev_label, chat, state):
     return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip())
 
 
+def do_confront(pair_label, chat, state):
+    chat = list(chat)
+    clock = engine.clock_md(state)
+    status = engine.status_card(state, state["cur"])
+    clue = engine.clue_board(state)
+    grp, md = gr.skip(), gr.skip()
+    if state["ended"]:
+        return (chat, clock, status, clue, gr.Group(visible=True),
+                engine.end_markdown(state), "", gr.skip(), gr.skip(), gr.skip())
+    pid = confront_map_for(state["case_id"]).get(pair_label or "")
+    if not pid:
+        chat.append({"role": "assistant", "content": "（先在「当面对质」里选一对人，再开始。）"})
+        return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
+    try:
+        res = engine.start_confrontation(state, pid, LLM)
+    except Exception:
+        traceback.print_exc()
+        res = {"reply": "（两人都别过头去，没有开口。）", "choices": [],
+               "timeup": False, "started": False}
+    chat.append({"role": "assistant", "content": res["reply"]})
+    clock = engine.clock_md(state)
+    status = engine.status_card(state, state["cur"])
+    clue = engine.clue_board(state)
+    if res["timeup"]:
+        grp, md = gr.Group(visible=True), engine.end_markdown(state)
+    if not res["started"]:
+        return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
+    return (chat, clock, status, clue, grp, md, "",
+            gr.update(visible=True),
+            gr.update(choices=res["choices"], value=None, visible=True),
+            gr.update(visible=True))
+
+
+def do_resolve(choice, chat, state):
+    chat = list(chat)
+    clock = engine.clock_md(state)
+    status = engine.status_card(state, state["cur"])
+    clue = engine.clue_board(state)
+    grp, md = gr.skip(), gr.skip()
+    if not choice:
+        chat.append({"role": "assistant", "content": "（先选一个名字，再揭穿。）"})
+        return (chat, clock, status, clue, grp, md, "", gr.skip(), gr.skip(), gr.skip())
+    try:
+        res = engine.resolve_confrontation(state, choice)
+    except Exception:
+        traceback.print_exc()
+        res = {"reply": "（这场对质不了了之。）", "clue": None, "correct": None, "timeup": False}
+    chat.append({"role": "assistant", "content": res["reply"]})
+    clock = engine.clock_md(state)
+    status = engine.status_card(state, state["cur"])
+    clue = engine.clue_board(state)
+    if res["timeup"]:
+        grp, md = gr.Group(visible=True), engine.end_markdown(state)
+    return (chat, clock, status, clue, grp, md, "",
+            gr.Group(visible=False),
+            gr.update(choices=[], value=None, visible=False),
+            gr.update(visible=False))
+
+
 def do_accuse(choice, chat, state):
     chat = list(chat)
     clock = engine.clock_md(state)
@@ -858,7 +927,9 @@ def do_load(code):
             gr.update(value=c["case_label"]), gr.update(value=diff_label),
             st, "",
             gr.update(choices=c["accuse_options"], value=None),
-            *quick_updates(cid), gr.update(value=None, visible=False))
+            *quick_updates(cid), gr.update(value=None, visible=False),
+            gr.update(choices=confront_labels_for(cid), value=None),
+            gr.update(visible=False))
 
 
 def _card_font(size):
@@ -972,9 +1043,19 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
                 gr.Markdown(
                     "1. **提问**：每次 -1 分钟；快捷问题同样扣时。\n"
                     "2. **出示证据**：每次 -2 分钟；对的证据 × 对的人 = 坦白 + 关键线索。\n"
-                    "3. **指认**：集齐线索后随时可指认；线索数决定 S/A/B，指认错误是冤案。\n"
-                    "4. **信任**：<15 被逐客（额外 -2 分钟）；<25 拒答关键案情；≥85 会主动透话。"
+                    "3. **当面对质**：让两名 NPC 就同一件事各自说一遍（-3 分钟）；谁在说谎，由你判断。\n"
+                    "4. **指认**：集齐线索后随时可指认；线索数决定 S/A/B，指认错误是冤案。\n"
+                    "5. **信任**：<15 被逐客（额外 -2 分钟）；<25 拒答关键案情；≥85 会主动透话。"
                 )
+            with gr.Accordion("⚔️ 当面对质（-3 分钟）", open=False):
+                confront_dd = gr.Dropdown(choices=confront_labels_for("clock"),
+                                          label="对质组合", value=None,
+                                          elem_classes=["confront-dd"])
+                confront_btn = gr.Button("开始对质", elem_classes=["quick-btn"])
+                with gr.Group(visible=False) as confront_grp:
+                    confront_choice = gr.Radio(choices=[], label="谁在说谎？",
+                                               elem_classes=["confront-choice"])
+                    confront_resolve_btn = gr.Button("揭穿谎言", elem_classes=["accuse-btn"])
             accuse_dd = gr.Dropdown(choices=CASES["clock"]["accuse_options"],
                                     label="指认真凶（一锤定音，慎重！）",
                                     elem_classes=["accuse-dd"])
@@ -997,7 +1078,9 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
 
     OUT = [chat, clock_md, status_md, clue_md, verdict_grp, verdict_md, q_box, npc_dd, ev_dd]
     FULL = (OUT + [case_dd, diff_radio, state, save_box, accuse_dd]
-            + quick_btns + [card_img])
+            + quick_btns + [card_img, confront_dd, confront_grp])
+    CONF_OUT = [chat, clock_md, status_md, clue_md, verdict_grp, verdict_md,
+                q_box, confront_grp, confront_choice, confront_resolve_btn]
 
     demo.load(do_restart, [case_dd, diff_radio, rank_code], FULL)
     apply_btn.click(do_restart, [case_dd, diff_radio, rank_code], FULL)
@@ -1006,6 +1089,8 @@ with gr.Blocks(title=GAME_TITLE, css=CSS, js=SOUND_JS) as demo:
     npc_dd.change(do_switch, [npc_dd, chat, state], OUT)
     q_box.submit(do_ask, [q_box, chat, state], OUT)
     ev_btn.click(do_present, [ev_dd, chat, state], OUT)
+    confront_btn.click(do_confront, [confront_dd, chat, state], CONF_OUT)
+    confront_resolve_btn.click(do_resolve, [confront_choice, chat, state], CONF_OUT)
     accuse_btn.click(do_accuse, [accuse_dd, chat, state], OUT + [card_img])
     restart_btn.click(do_restart, [case_dd, diff_radio, rank_code], FULL)
     card_btn.click(do_card, [state, rank_code], [card_img])

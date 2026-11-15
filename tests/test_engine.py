@@ -131,6 +131,44 @@ class TestAccuse(unittest.TestCase):
         self.assertEqual(self.st["verdict"], "LOSE")
 
 
+class TestConfront(unittest.TestCase):
+    def setUp(self):
+        self.llm = L.MockLLM()
+
+    def test_correct_liar_unlocks_clue(self):
+        st = engine.new_game("clock", "normal", 0)
+        r = engine.start_confrontation(st, "clock_conf_1", self.llm)
+        self.assertTrue(r["started"])
+        self.assertEqual(r["choices"], ["王大锤", "苏眉"])
+        self.assertEqual(st["time"], 57)
+        rr = engine.resolve_confrontation(st, "王大锤")
+        self.assertTrue(rr["correct"])
+        self.assertEqual(rr["clue"], "L4")
+        self.assertIn("L4", st["clues"])
+
+    def test_wrong_choice_penalizes_and_no_clue(self):
+        st = engine.new_game("clock", "normal", 0)
+        engine.start_confrontation(st, "clock_conf_1", self.llm)
+        rr = engine.resolve_confrontation(st, "苏眉")
+        self.assertFalse(rr["correct"])
+        self.assertEqual(st["clues"], [])
+        self.assertLess(st["npc"]["su"]["trust"], 60)
+
+    def test_chapter2_confrontation(self):
+        st = engine.new_game("letter", "normal", 0)
+        engine.start_confrontation(st, "letter_conf_1", self.llm)
+        rr = engine.resolve_confrontation(st, "贾万通")
+        self.assertTrue(rr["correct"])
+        self.assertEqual(rr["clue"], "L7")
+
+    def test_duplicate_and_pending_guards(self):
+        st = engine.new_game("clock", "normal", 0)
+        engine.start_confrontation(st, "clock_conf_1", self.llm)
+        self.assertFalse(engine.start_confrontation(st, "clock_conf_1", self.llm)["started"])
+        engine.resolve_confrontation(st, "王大锤")
+        self.assertFalse(engine.start_confrontation(st, "clock_conf_1", self.llm)["started"])
+
+
 class TestChapter2S(unittest.TestCase):
     def test_full_s_path(self):
         st = engine.new_game("letter", "normal", 0)

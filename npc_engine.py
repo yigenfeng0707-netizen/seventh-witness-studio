@@ -36,6 +36,8 @@ def new_game(case_id="clock", difficulty="normal", rank_tier=0, fame_ch1=False):
         "time": minutes,
         "start_time": minutes,
         "clues": [],
+        "confronted": [],
+        "confront_pending": None,
         "ended": False,
         "verdict": None,
         "last_choice": "",
@@ -159,6 +161,8 @@ def from_json(code):
             elif v:
                 fixed[k] = True
     st["evidence_shown"] = fixed
+    st.setdefault("confronted", [])
+    st.setdefault("confront_pending", None)
     return st
 
 
@@ -190,6 +194,87 @@ def present_evidence(state, npc_id, ev_id):
         return {"reply": conf, "clue": clue, "timeup": _tick(state)}
 
     return {"reply": npc["react_miss"], "clue": None, "timeup": _tick(state)}
+
+
+# ---------------- 当面对质 ----------------
+
+def _confront_reaction(llm, npc, st, question, consensus, rules, fame):
+    """让 LLM 生成一句角色化反应；失败/空则返回空串，靠作者写好的 claim 兜底。"""
+    q = f"【当面对质】有人当着众人的面向你发问：{question} 请用一句符合你性格的台词回应。"
+    try:
+        r = llm.ask(npc, q, st["trust"], st["memories"], st["history"],
+                    rules=rules, consensus=consensus, fame=fame)
+        return str(r.get("dialogue") or "").strip()
+    except Exception:
+        return ""
+
+
+def start_confrontation(state, pair_id, llm):
+    if state["ended"]:
+        return {"reply": "（本案已结。点击“重新开始”再开一局。）", "choices": [],
+                "timeup": False, "started": False}
+    c = CD(state)
+    pair = next((p for p in c.get("confrontations", []) if p["id"] == pair_id), None)
+    if pair is None:
+        return {"reply": "（这对组合无法对质。）", "choices": [], "timeup": False, "started": False}
+    if pair_id in state.get("confronted", []):
+        return {"reply": "（这件事已经对质过了。）", "choices": [], "timeup": False, "started": False}
+    if state.get("confront_pending"):
+        return {"reply": "（上一场对质还没收场，先揭穿或结束它。）", "choices": [],
+                "timeup": False, "started": False}
+
+    a, b = c["npcs"][pair["a"]], c["npcs"][pair["b"]]
+    state["time"] = max(0, state["time"] - pair.get("time_cost", 3))
+    state["confront_pending"] = pair_id
+    consensus = c.get("consensus")
+    rules = c.get("topic_rules")
+    fame = state.get("fame", False)
+    ra = _confront_reaction(llm, a, state["npc"][pair["a"]], pair["question"], consensus, rules, fame)
+    rb = _confront_reaction(llm, b, state["npc"][pair["b"]], pair["question"], consensus, rules, fame)
+
+    def line(npc, reaction, claim):
+        head = f"“{reaction}”\n\n" if reaction else ""
+        return f"{head}**{npc['name']}的说法**：{claim}"
+
+    reply = (f"## ⚔️ 当面对质 · {pair['label']}\n\n"
+             f"{line(a, ra, pair['a_claim'])}\n\n"
+             f"{line(b, rb, pair['b_claim'])}\n\n"
+             f"—— 两人的说法对不上。**谁在说谎？**")
+    return {"reply": reply, "choices": [a["name"], b["name"]],
+            "timeup": _tick(state), "started": True}
+
+
+def resolve_confrontation(state, choice):
+    if state["ended"]:
+        return {"reply": "（本案已结。）", "clue": None, "correct": None, "timeup": False}
+    pair_id = state.get("confront_pending")
+    c = CD(state)
+    pair = next((p for p in c.get("confrontations", []) if p["id"] == pair_id), None)
+    if pair is None:
+        state["confront_pending"] = None
+        return {"reply": "（没有正在进行的对质。）", "clue": None, "correct": None, "timeup": False}
+
+    liar_id = pair["liar"]
+    honest_id = pair["b"] if liar_id == pair["a"] else pair["a"]
+    liar, honest = c["npcs"][liar_id], c["npcs"][honest_id]
+    picked = next((nid for nid, n in c["npcs"].items() if n["name"] in (choice or "")), None)
+    correct = picked == liar_id
+
+    state["confront_pending"] = None
+    state["confronted"] = list(dict.fromkeys(state.get("confronted", []) + [pair_id]))
+    if correct:
+        state["npc"][honest_id]["trust"] = max(5, min(100, state["npc"][honest_id]["trust"] + pair.get("trust_win", 6)))
+        state["npc"][liar_id]["trust"] = max(5, min(100, state["npc"][liar_id]["trust"] + pair.get("trust_lose", -8)))
+        clue = _add_clue(state, pair.get("clue")) if pair.get("clue") else None
+        extra = "\n\n🔎 **【关键线索解锁！查看右侧线索板】**" if clue else ""
+        reply = f"## ✅ 谎言被揭穿\n\n{pair['truth']}{extra}"
+    else:
+        clue = None
+        for nid in (honest_id, liar_id):
+            state["npc"][nid]["trust"] = max(5, min(100, state["npc"][nid]["trust"] + pair.get("trust_lose", -8)))
+        reply = (f"## ❌ 你指错了\n\n真正说谎的是 **{liar['name']}**。\n\n{pair['truth']}\n\n"
+                 f"（两人都觉得被冒犯，信任度下降。）")
+    return {"reply": reply, "clue": clue, "correct": correct, "timeup": _tick(state)}
 
 
 # ---------------- 指认 ----------------

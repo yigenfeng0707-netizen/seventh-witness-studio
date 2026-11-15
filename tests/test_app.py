@@ -14,11 +14,11 @@ import npc_engine as engine   # noqa: E402
 class TestContracts(unittest.TestCase):
     def test_output_slots(self):
         self.assertEqual(len(app.OUT), 9)
-        self.assertEqual(len(app.FULL), 19)
+        self.assertEqual(len(app.FULL), 21)
 
     def test_restart_locked_chapter_rolls_back(self):
         out = app.do_restart("第二章 · 狱中忏悔信失踪案", "普通", "0:0:0:0")
-        self.assertEqual(len(out), 19)
+        self.assertEqual(len(out), 21)
         self.assertEqual(out[9]["value"], "第一章 · 自鸣钟机芯失窃案")
 
     def test_restart_locked_hard_rolls_back(self):
@@ -40,7 +40,7 @@ class TestContracts(unittest.TestCase):
     def test_load_chapter2_syncs_accuse(self):
         st = engine.new_game("letter", "normal", 0)
         out = app.do_load(engine.to_json(st))
-        self.assertEqual(len(out), 19)
+        self.assertEqual(len(out), 21)
         self.assertEqual(out[9]["value"], "第二章 · 狱中忏悔信失踪案")
         self.assertIn("🏪 贾万通（当铺老板）", out[13]["choices"])
 
@@ -50,6 +50,17 @@ class TestContracts(unittest.TestCase):
         self.assertEqual(len(app.do_present("📄 账本残页 — x", [], st)), 9)
         self.assertEqual(len(app.do_switch("🍵 苏眉（酒馆老板娘）", [], st)), 9)
         self.assertEqual(len(app.do_accuse("🔨 王大锤（铁匠）", [], st)), 10)
+        st2 = engine.new_game("clock")
+        self.assertEqual(len(app.do_confront("王大锤 × 苏眉 · 案发当晚", [], st2)), 10)
+        self.assertEqual(len(app.do_resolve("王大锤", [], st2)), 10)
+
+    def test_confront_roundtrip(self):
+        st = engine.new_game("clock")
+        out = app.do_confront("王大锤 × 苏眉 · 案发当晚", [], st)
+        self.assertEqual(out[8]["choices"], ["王大锤", "苏眉"])
+        resolved = app.do_resolve("王大锤", out[0], st)
+        self.assertIn("L4", st["clues"])
+        self.assertFalse(resolved[7].visible)
 
     def test_switch_same_npc_keeps_chat(self):
         # 切案/读档时程序化更新 npc_dd 不应把聊天区覆盖成问候
