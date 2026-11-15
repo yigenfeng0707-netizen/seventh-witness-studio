@@ -76,7 +76,7 @@ def main():
     wait_ready()
 
     out = call("do_restart", ["第一章 · 自鸣钟机芯失窃案", "普通", ""])
-    assert len(out) == 19, "do_restart 输出槽位异常：%d" % len(out)
+    assert len(out) == 21, "do_restart 输出槽位异常：%d" % len(out)
     assert "卷宗" in _text(out[0][0]), "开局缺少卷宗"
     print("[smoke] 第一章开局 / 卷宗 OK")
 
@@ -89,6 +89,13 @@ def main():
         "📄 账本残页 — 酒馆记账簿残页，有一笔三倍工钱的定制记录", []])
     assert "线索 1/4" in out[1], "有效证据未解锁线索"
     print("[smoke] 证据坦白 OK")
+
+    out = call("do_confront", ["王大锤 × 苏眉 · 案发当晚", []])
+    assert len(out) == 10, "do_confront 输出槽位异常：%d" % len(out)
+    assert out[8].get("choices") == ["王大锤", "苏眉"], "对质选项异常"
+    out = call("do_resolve", ["王大锤", []])
+    assert "谎言被揭穿" in _text(out[0][-1]), "对质结算失败"
+    print("[smoke] 当面对质 OK")
 
     out = call("do_restart", ["第二章 · 狱中忏悔信失踪案", "普通", "0:1:1:0"])
     assert "第二章" in out[9]["value"], "第二章未切换"
